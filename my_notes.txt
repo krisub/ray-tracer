@@ -1,0 +1,45 @@
+TODO: TEST ON LAB MACHINES.
+
+the commands to run stuff!!
+
+macOS Sequoia
+uname -m -> arm64 so i use the macos-arm binaries
+
+(had to do brew install fltk glm glew glfw jpeg libpng zlib)
+
+mkdir build
+cd build
+cmake ..
+make -j8
+./bin/ray # runs the gui that was just compiled
+
+# from /ray (had to install colorama for py scripts)
+python3 sancheck.py .
+python3 raycheck.py # doesn't work because of macos version
+
+# TODO. test on lab machines.
+
+
+
+
+implementation plan:
+- intersections
+- light and shadow
+- phong shading
+- the ray tracing part (recursive reflection, refraction)
+- fixing stuff
+  - phong interpolation
+  - anti aliasing
+ec:
+- better anti aliasing
+  - rays at corners of pixels, similar colors: average
+    - otherwise trace more
+- shadow attenuation
+- csg?? what does this mean
+  - something about boolean operations between shapes
+
+important files
+- trimesh for the triangle intersection and interpolation
+- light for shadows and light
+- material for shading
+- raytracer for.... raytracing lmao
