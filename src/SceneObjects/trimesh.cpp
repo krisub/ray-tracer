@@ -1,16 +1,16 @@
 #include "trimesh.h"
+#include "../ui/TraceUI.h"
 #include <algorithm>
 #include <assert.h>
 #include <cmath>
 #include <float.h>
 #include <string.h>
-#include "../ui/TraceUI.h"
 extern TraceUI *traceUI;
 extern TraceUI *traceUI;
 
 using namespace std;
 
-Trimesh::~Trimesh() {
+Trimesh::~Trimesh() { // has a list of triangles (TrimeshFaces)
   for (auto f : faces)
     delete f;
 }
@@ -55,6 +55,8 @@ const char *Trimesh::doubleCheck() {
   return 0;
 }
 
+// shoots a ray at all triangles in the mesh and keeps whatever pt is closest
+// returns true if there was a hit false otherwise
 bool Trimesh::intersectLocal(ray &r, isect &i) const {
   bool have_one = false;
   for (auto face : faces) {
@@ -75,6 +77,16 @@ bool TrimeshFace::intersect(ray &r, isect &i) const {
   return intersectLocal(r, i);
 }
 
+/*
+in class we used v as direction but it overlaps with barycentric coord v so its
+d here. ray equation: o+vt (o- origin, d - direction, t - distance along the
+ray, unknown) triangle equation: a + u(b-a) + v(c-a) (a,b,c - triangle vertices,
+u,v - barycentric coords, unknown) so we want to solve for t,u,v such that: o +
+dt = a + u(b-a) + v(c-a) = a + uAB + vAC rearranging: o - a = -dt + uAB + vAC
+or: dt - uAB - vAC = a - o
+which we can write as a matrix equation:
+[d -AB -AC] [t u v]^T = a - o
+*/
 
 // Intersect ray r with the triangle abc.  If it hits returns true,
 // and put the parameter in t and the barycentric coordinates of the
@@ -91,13 +103,69 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
      - Otherwise, if the parent mesh has non-empty `vertexColors`,
        barycentrically interpolate the colors from the three vertices of the
        face. Create a new material by copying the parent's material, set the
-       diffuse color of this material to the interpolated color, and then 
+       diffuse color of this material to the interpolated color, and then
        assign this material to the intersection.
      - If neither is true, assign the parent's material to the intersection.
   */
 
+  const glm::dvec3 &a = parent->vertices[ids[0]]; // TrimeshFace constructor
+  const glm::dvec3 &b = parent->vertices[ids[1]];
+  const glm::dvec3 &c = parent->vertices[ids[2]];
+
+  glm::dvec3 ABedge = b - a; // starting at a, the vector that gets to b. AB
+  glm::dvec3 ACedge = c - a; // AC
+  /*
+  a point is inside the triangle if all of its barycentric coordinates
+  sum to 1 and are all positive. if a point is outside the triangle then
+  one of its barycentric coordinates is negative. but they always sum to 1.
+  vertices of a triangle have barycentric coordinates: (0,0,1), (0,1,0), (1,0,0)
+  */
+  /*
+  can calculate if the ray is parallel to the triangle by finding the
+  determinant of the [d AB AC] matrix from above. if det is 0 then
+  the ray is either parallel or runs along the edge.
+  */
+  glm::dvec3 o = r.getPosition();
+  glm::dvec3 d = r.getDirection();
+  glm::dvec3 AO = o - a; // vector from a to ray origin. AO
+
+  glm::dvec3 dCrossAC = glm::cross(d, ACedge);
+  double det = glm::dot(ABedge, dCrossAC);
+
+  const double EPS = 1e-8;
+  if (fabs(det) < EPS)
+    return false; // ray is parallel. (TODO: or runs along edge? is that valid?)
+
+  // u, v, t
+
+  double u = glm::dot(AO, dCrossAC) / det;
+  if (u < 0.0 || u > 1.0)
+    return false;
+
+  double v = glm::dot(d, glm::cross(AO, ABedge)) / det;
+  if (v < 0.0 || (u + v) > 1.0)
+    return false;
+
+  double t = glm::dot(ACedge, glm::cross(AO, ABedge)) / det;
+  if (t < EPS /*|| t > i.getT()*/)
+    return false; // intersection is behind ray or farther than a previous hit
+
+  // setting stuff
+  i.setT(t);
+  i.setBary(1.0 - u - v, u, v);
+  i.setN(this->normal);
   i.setObject(this->parent);
-  return false;
+  i.setMaterial(this->parent->getMaterial()); // using parent
+
+  // TODO: if have texture coords need to interpolate it here.
+
+  if (!parent->uvCoords.empty()) {
+    glm::dvec2 uv = (1.0 - u - v) * parent->uvCoords[ids[0]] +
+                    u * parent->uvCoords[ids[1]] + v * parent->uvCoords[ids[2]];
+    i.setUVCoordinates(uv);
+  }
+
+  return true;
 }
 
 // Once all the verts and faces are loaded, per vertex normals can be
@@ -123,4 +191,3 @@ void Trimesh::generateNormals() {
 
   vertNorms = true;
 }
-
