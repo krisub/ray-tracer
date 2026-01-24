@@ -27,6 +27,7 @@ implementation plan:
   - ray triangle intersection should be done
 - light and shadow
 - phong shading
+  - cuz this has to be done before u can see the shadows duh
 - the ray tracing part (recursive reflection, refraction)
 - fixing stuff
   - phong interpolation

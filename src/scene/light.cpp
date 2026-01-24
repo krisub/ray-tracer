@@ -54,8 +54,8 @@ double PointLight::distanceAttenuation(const glm::dvec3 &P) const {
   double atten_denom =
       /*1.0 /*/ (constantTerm + linearTerm * dist +
                  quadraticTerm * dist * dist);
-  if (atten_denom < 1e6) {
-    atten_denom = 1e6; // div by 0
+  if (atten_denom < 1e-6) {
+    atten_denom = 1e-6; // div by 0
   }
 
   double attenuation = 1.0 / atten_denom;

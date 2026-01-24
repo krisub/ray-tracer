@@ -42,6 +42,51 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   // 		.
   // 		.
   // }
+  // https://learnopengl.com/Lighting/Basic-Lighting
+  /*
+  final color is emissive + ambient +
+    diffuse for each light + specular for each light
+
+  emissive- obj glows on its own
+  ambient- bg
+  diffuse- light scatter equally all direxns
+  specular- light reflect in specific direxn
+
+  need intersection point, surface normal, where the camera is
+  then: can get emissive and ambient (base color) with ke, ka * scene->ambient
+
+  ka * scene ambient -> shadows aren't completely black
+
+  atp the color is the minimum visible color
+
+  loop over lights like in comment:
+  for each light:
+    get direction from surface to light bc light depends on angle btwn light and
+  surface normal get distance attentuation (further away light is dim and vice
+  versa, skip if light is nothing) get shadow attentuation (partial shadows with
+  xyz components?) diffuse and specular lighting somehow?? need to read docs
+  */
+  glm::dvec3 hitPoint = r.at(i);
+  glm::dvec3 surfaceNormal = i.getN();
+  glm::dvec3 cameraDir =
+      glm::normalize(-r.getDirection()); // negative ray direction
+  glm::dvec3 color = ke(i) + ka(i) * scene->ambient();
+
+  for (const auto &pLight : scene->getAllLights()) {
+    glm::dvec3 dirToLight =
+        pLight->getDirection(hitPoint); // direction from SURFACE (from the
+                                        // intersection/hit point) to light
+
+    double distAtten = pLight->distanceAttenuation(hitPoint);
+    if (distAtten < 1e-6)
+      continue; // skip if light doesn't contribute anything
+
+    glm::dvec3 shadowAtten = pLight->shadowAttenuation(r, hitPoint);
+    if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
+      continue; // if i skip if shadow attenuation is pure black then sould i
+                // change shadow attentuation to be partial? idk
+  }
+
   return kd(i);
 }
 
