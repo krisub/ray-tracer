@@ -62,9 +62,13 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   loop over lights like in comment:
   for each light:
     get direction from surface to light bc light depends on angle btwn light and
-  surface normal get distance attentuation (further away light is dim and vice
-  versa, skip if light is nothing) get shadow attentuation (partial shadows with
-  xyz components?) diffuse and specular lighting somehow?? need to read docs
+    surface normal get distance attentuation (further away light is dim and vice
+    versa, skip if light is nothing) get shadow attentuation if in shadow skip other components
+    diffuse component: lambert's cosine law: dot(surface normal, dir to light)
+    specular component: reflection vector = 2 * dot(surface normal, dir to light) *
+    surface normal - dir to light
+    then dot(reflection vector, camera direction) ^ shininess
+      - objects have shininess values. lower means higher scatter -> less highlight.
   */
   glm::dvec3 hitPoint = r.at(i);
   glm::dvec3 surfaceNormal = i.getN();
@@ -83,11 +87,29 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
     glm::dvec3 shadowAtten = pLight->shadowAttenuation(r, hitPoint);
     if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
-      continue; // if i skip if shadow attenuation is pure black then sould i
-                // change shadow attentuation to be partial? idk
+      continue; // skip diffuse and specular if in shadow
+
+    double diffuseReflection = glm::dot(surfaceNormal, dirToLight);
+    if (diffuseReflection > 0) {
+      glm::dvec3 diffuse = kd(i) * pLight->getColor() * diffuseReflection;
+      color += distAtten * shadowAtten * diffuse;
+
+      // only do specular if diffuse component exists
+      glm::dvec3 reflectionVector = glm::normalize(
+          (2.0 * diffuseReflection * surfaceNormal) - dirToLight);
+      double specularReflection = glm::dot(reflectionVector, cameraDir);
+      if (specularReflection > 0) {
+        double shine = shininess(i);
+        glm::dvec3 specular =
+            ks(i) * pLight->getColor() * pow(specularReflection, shine);
+        color += distAtten * shadowAtten * specular;
+      }
+    }
   }
 
-  return kd(i);
+  // return kd(i);
+  return glm::clamp(color, glm::dvec3(0.0, 0.0, 0.0),
+                        glm::dvec3(1.0, 1.0, 1.0));
 }
 
 TextureMap::TextureMap(string filename) {
