@@ -24,6 +24,7 @@ python3 raycheck.py # doesn't work because of macos version
 
 implementation plan:
 - intersections
+  - ray triangle intersection should be done
 - light and shadow
 - phong shading
 - the ray tracing part (recursive reflection, refraction)
