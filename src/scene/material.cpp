@@ -71,7 +71,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
       - objects have shininess values. lower means higher scatter -> less
   highlight.
   */
-  std::cout << "shading at t=" << i.getT() << std::endl;
+  // std::cout << "shading at t=" << i.getT() << std::endl;
   glm::dvec3 hitPoint = r.at(i);
   glm::dvec3 surfaceNormal = i.getN();
   glm::dvec3 cameraDir =
@@ -108,11 +108,11 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
       }
     }
 
-    std::cout << "Light: " << (pLight->getColor().x) << " "
-              << "DistAtten: " << distAtten
-              << " ShadowAtten: " << (shadowAtten.x) << std::endl;
-    std::cout << "DiffuseReflection (N dot L): " << diffuseReflection
-              << std::endl;
+    // std::cout << "Light: " << (pLight->getColor().x) << " "
+    //           << "DistAtten: " << distAtten
+    //           << " ShadowAtten: " << (shadowAtten.x) << std::endl;
+    // std::cout << "DiffuseReflection (N dot L): " << diffuseReflection
+    //           << std::endl;
   }
 
   // return kd(i);

@@ -59,20 +59,20 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   double x = double(i) / double(buffer_width);
   double y = double(j) / double(buffer_height);
 
-  if (i == buffer_width / 2 && j == buffer_height / 2) {
-    debugMode = true;
-    std::cout << "tracing center pixel (" << i << "," << j << ")" << std::endl;
-  } else {
-    debugMode = false;
-  }
+  // if (i == buffer_width / 2 && j == buffer_height / 2) {
+  //   debugMode = true;
+  //   std::cout << "tracing center pixel (" << i << "," << j << ")" << std::endl;
+  // } else {
+  //   debugMode = false;
+  // }
 
   unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
   col = trace(x, y);
 
-  if (debugMode) {
-    std::cout << "center pixel result: " << col.x << ", " << col.y << ", "
-              << col.z << std::endl;
-  }
+  // if (debugMode) {
+  //   std::cout << "center pixel result: " << col.x << ", " << col.y << ", "
+  //             << col.z << std::endl;
+  // }
 
   pixel[0] = (int)(255.0 * col[0]);
   pixel[1] = (int)(255.0 * col[1]);
@@ -99,7 +99,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
   if (scene->intersect(r, i)) {
     // YOUR CODE HERE
-    std::cout << "hit object at t=" << i.getT() << std::endl;
+    // std::cout << "hit object at t=" << i.getT() << std::endl;
     // An intersection occurred!  We've got work to do. For now, this code gets
     // the material for the surface that was intersected, and asks that material
     // to provide a color for the ray.
@@ -169,7 +169,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     }
 
   } else {
-    std::cout << "no intersection." << std::endl;
+    // std::cout << "no intersection." << std::endl;
     // No intersection. This ray travels to infinity, so we color
     // it according to the background color, which in this (simple)
     // case is just black.

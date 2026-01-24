@@ -38,6 +38,7 @@ implementation plan:
 // TODO: setup on lab machines
 - fixing stuff
   - phong interpolation
+    - done
   - anti aliasing
 ec:
 - better anti aliasing

@@ -153,16 +153,47 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
   // setting stuff
   i.setT(t);
   i.setBary(1.0 - u - v, u, v);
-  i.setN(this->normal);
-  i.setObject(this->parent);
-  i.setMaterial(this->parent->getMaterial()); // using parent
+  // OLD PRE PHONG INTERP
+  // i.setN(this->normal); // OR UNCOMMENT THIS AND GET RID OF ELSE BELOW
 
   // TODO: if have texture coords need to interpolate it here.
+  // POST PHONG INTERP
+
+  if (parent->vertNorms) { // if parent mesh has vertex norms -> get norms for 3
+                           // verteices
+    glm::dvec3 norm1 = parent->normals[ids[0]];
+    glm::dvec3 norm2 = parent->normals[ids[1]];
+    glm::dvec3 norm3 = parent->normals[ids[2]];
+
+    // interpolate  (1-u-v) for norm1, u for norm 2, v for norm 2
+    glm::dvec3 interpolatedNorm =
+        ((1.0 - u - v) * norm1) + (u * norm2) + (v * norm3);
+    i.setN(glm::normalize(interpolatedNorm));
+  } else {
+    i.setN(this->normal);
+  }
+
+  i.setObject(this->parent);
+
+  // i.setMaterial(this->parent->getMaterial()); // using parent
 
   if (!parent->uvCoords.empty()) {
     glm::dvec2 uv = (1.0 - u - v) * parent->uvCoords[ids[0]] +
                     u * parent->uvCoords[ids[1]] + v * parent->uvCoords[ids[2]];
     i.setUVCoordinates(uv);
+  } else if (!parent->vertColors.empty()) { // getting vertex colors
+    glm::dvec3 color1 = parent->vertColors[ids[0]];
+    glm::dvec3 color2 = parent->vertColors[ids[1]];
+    glm::dvec3 color3 = parent->vertColors[ids[2]];
+
+    glm::dvec3 interpolatedColor =
+        ((1.0 - u - v) * color1) + (u * color2) + (v * color3);
+
+    Material m = this->parent->getMaterial();
+    m.setDiffuse(interpolatedColor);
+    i.setMaterial(m);
+  } else {
+    i.setMaterial(this->parent->getMaterial());
   }
 
   return true;
