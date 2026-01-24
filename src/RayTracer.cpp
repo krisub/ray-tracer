@@ -115,8 +115,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
 RayTracer::RayTracer()
     : scene(nullptr), buffer(0), thresh(0), buffer_width(0), buffer_height(0),
-      m_bBufferReady(false) {
-}
+      m_bBufferReady(false) {}
 
 RayTracer::~RayTracer() {}
 
@@ -244,6 +243,11 @@ void RayTracer::traceImage(int w, int h) {
   //
   //       An asynchronous traceImage lets the GUI update your results
   //       while rendering.
+  for (int j = 0; j < h; ++j) {
+    for (int i = 0; i < w; ++i) {
+      tracePixel(i, j);
+    }
+  }
 }
 
 int RayTracer::aaImage() {
@@ -273,7 +277,6 @@ void RayTracer::waitRender() {
   //
   // TIPS: Join all worker threads here.
 }
-
 
 glm::dvec3 RayTracer::getPixel(int i, int j) {
   unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;

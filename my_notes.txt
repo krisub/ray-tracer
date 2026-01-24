@@ -16,7 +16,7 @@ make -j8
 # from /ray (had to install colorama for py scripts)
 python3 sancheck.py .
 python3 raycheck.py # doesn't work because of macos version
-
+./build/bin/ray
 # TODO. test on lab machines.
 
 
@@ -43,3 +43,6 @@ important files
 - light for shadows and light
 - material for shading
 - raytracer for.... raytracing lmao
+
+
+
