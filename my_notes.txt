@@ -25,9 +25,13 @@ python3 raycheck.py # doesn't work because of macos version
 implementation plan:
 - intersections
   - ray triangle intersection should be done
+  - still need to add texture interpolation
 - light and shadow
+  - done? 
+  - see if i can do partial shadows? but i thought its not possible with rt...
 - phong shading
   - cuz this has to be done before u can see the shadows duh
+  - done
 - the ray tracing part (recursive reflection, refraction)
 - fixing stuff
   - phong interpolation
@@ -39,6 +43,15 @@ ec:
 - shadow attenuation
 - csg?? what does this mean
   - something about boolean operations between shapes
+- multiple overlapping translucent objectsion
+- other options for distance attenuation multipliers
+- should i:
+  - allow refraction rays to reflect off the back face?
+  - or do not let refraction rays reflect from the back face?
+  - or both
+- backface culling?
+- total internal reflection?
+
 
 important files
 - trimesh for the triangle intersection and interpolation

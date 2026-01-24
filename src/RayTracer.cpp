@@ -74,6 +74,11 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 // called from here) to handle reflection, refraction, etc etc.
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
+
+  // if (depth <= 0) {
+  //   return glm::dvec3(0.0, 0.0, 0.0); // stop when depth is 0
+  // }
+
   isect i;
   glm::dvec3 colorC;
 #if VERBOSE
@@ -93,6 +98,13 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
+
+    // https://www.opengl.org/archives/resources/code/samples/advanced/advanced97/notes/node88.html
+    // reflection: angle of incidence = angle of reflection
+    // incident direction can be decomposed into two components, one parallel to
+    // surface and one perpendicular to surface normal:
+    //  refraction: snell's law
+
   } else {
     // No intersection. This ray travels to infinity, so we color
     // it according to the background color, which in this (simple)
