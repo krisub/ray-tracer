@@ -23,6 +23,8 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
                 ray::SHADOW);
   isect i;
   if (scene->intersect(shadowRay, i)) {
+    if (i.getT() < RAY_EPSILON)
+      return glm::dvec3(1.0, 1.0, 1.0);
     return glm::dvec3(0.0, 0.0, 0.0); // black cuz shadow
   }
 
@@ -85,7 +87,7 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
   // if obj behind light doesnt matter
   isect i;
   if (scene->intersect(shadowRay, i)) {
-    if (i.getT() < distToLight) {
+    if (i.getT() < distToLight && i.getT() > RAY_EPSILON) {
       return glm::dvec3(0.0, 0.0, 0.0);
     }
   }

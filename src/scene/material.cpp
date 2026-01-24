@@ -63,13 +63,15 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   for each light:
     get direction from surface to light bc light depends on angle btwn light and
     surface normal get distance attentuation (further away light is dim and vice
-    versa, skip if light is nothing) get shadow attentuation if in shadow skip other components
-    diffuse component: lambert's cosine law: dot(surface normal, dir to light)
-    specular component: reflection vector = 2 * dot(surface normal, dir to light) *
-    surface normal - dir to light
-    then dot(reflection vector, camera direction) ^ shininess
-      - objects have shininess values. lower means higher scatter -> less highlight.
+    versa, skip if light is nothing) get shadow attentuation if in shadow skip
+  other components diffuse component: lambert's cosine law: dot(surface normal,
+  dir to light) specular component: reflection vector = 2 * dot(surface normal,
+  dir to light) * surface normal - dir to light then dot(reflection vector,
+  camera direction) ^ shininess
+      - objects have shininess values. lower means higher scatter -> less
+  highlight.
   */
+  std::cout << "shading at t=" << i.getT() << std::endl;
   glm::dvec3 hitPoint = r.at(i);
   glm::dvec3 surfaceNormal = i.getN();
   glm::dvec3 cameraDir =
@@ -105,11 +107,17 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
         color += distAtten * shadowAtten * specular;
       }
     }
+
+    std::cout << "Light: " << (pLight->getColor().x) << " "
+              << "DistAtten: " << distAtten
+              << " ShadowAtten: " << (shadowAtten.x) << std::endl;
+    std::cout << "DiffuseReflection (N dot L): " << diffuseReflection
+              << std::endl;
   }
 
   // return kd(i);
   return glm::clamp(color, glm::dvec3(0.0, 0.0, 0.0),
-                        glm::dvec3(1.0, 1.0, 1.0));
+                    glm::dvec3(1.0, 1.0, 1.0));
 }
 
 TextureMap::TextureMap(string filename) {

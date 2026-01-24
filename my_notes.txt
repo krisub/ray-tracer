@@ -33,6 +33,9 @@ implementation plan:
   - cuz this has to be done before u can see the shadows duh
   - done
 - the ray tracing part (recursive reflection, refraction)
+  - done
+
+// TODO: setup on lab machines
 - fixing stuff
   - phong interpolation
   - anti aliasing
@@ -61,3 +64,4 @@ important files
 
 
 
+./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/reflection2.json reflect.png > reflect.out

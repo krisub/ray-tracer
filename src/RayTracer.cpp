@@ -59,8 +59,20 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   double x = double(i) / double(buffer_width);
   double y = double(j) / double(buffer_height);
 
+  if (i == buffer_width / 2 && j == buffer_height / 2) {
+    debugMode = true;
+    std::cout << "tracing center pixel (" << i << "," << j << ")" << std::endl;
+  } else {
+    debugMode = false;
+  }
+
   unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
   col = trace(x, y);
+
+  if (debugMode) {
+    std::cout << "center pixel result: " << col.x << ", " << col.y << ", "
+              << col.z << std::endl;
+  }
 
   pixel[0] = (int)(255.0 * col[0]);
   pixel[1] = (int)(255.0 * col[1]);
@@ -75,9 +87,9 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
 
-  // if (depth <= 0) {
-  //   return glm::dvec3(0.0, 0.0, 0.0); // stop when depth is 0
-  // }
+  if (depth <= 0) {
+    return glm::dvec3(0.0, 0.0, 0.0); // stop when depth is 0
+  }
 
   isect i;
   glm::dvec3 colorC;
@@ -87,7 +99,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
   if (scene->intersect(r, i)) {
     // YOUR CODE HERE
-
+    std::cout << "hit object at t=" << i.getT() << std::endl;
     // An intersection occurred!  We've got work to do. For now, this code gets
     // the material for the surface that was intersected, and asks that material
     // to provide a color for the ray.
@@ -105,7 +117,59 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     // surface and one perpendicular to surface normal:
     //  refraction: snell's law
 
+    glm::dvec3 Kr = m.kr(i); // reflective component
+    if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
+      glm::dvec3 rayDir = r.getDirection();
+      glm::dvec3 surfaceNormal = i.getN();
+      glm::dvec3 reflectDir = glm::reflect(rayDir, surfaceNormal);
+
+      ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+                       glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+
+      double t_val;
+      colorC += Kr * traceRay(reflectedRay, thresh, depth - 1, t_val);
+    }
+
+    glm::dvec3 Kt = m.kt(i); // refractive (transmissive) component
+    if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
+      glm::dvec3 rayDir = r.getDirection();
+      glm::dvec3 surfaceNormal = i.getN();
+      double indexOfRefraction = m.index(i);
+
+      /*
+      if dot product (cosine of angle of incidence) < 0 we are going into the
+      material (hitting the front) otherwise we are leaving the material
+      (hitting the back)
+      */
+
+      double cosIncidence = glm::dot(surfaceNormal, rayDir);
+      double iorRatio;
+      glm::dvec3 normalForRefraction;
+
+      // TODO: can we assume that we are always going into/out of air? what
+      // about from material to material?
+      if (cosIncidence < 0) { // air to material
+        iorRatio = 1.0 / indexOfRefraction;
+        normalForRefraction = surfaceNormal;
+      } else { // material to air.
+        iorRatio = indexOfRefraction / 1.0;
+        normalForRefraction = -surfaceNormal;
+      }
+
+      glm::dvec3 refractionDir =
+          glm::refract(rayDir, normalForRefraction, iorRatio);
+
+      if (glm::length(refractionDir) > 0.0) {
+        ray refractedRay(r.at(i) + refractionDir * RAY_EPSILON, refractionDir,
+                         glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
+
+        double t_val;
+        colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
+      }
+    }
+
   } else {
+    std::cout << "no intersection." << std::endl;
     // No intersection. This ray travels to infinity, so we color
     // it according to the background color, which in this (simple)
     // case is just black.
