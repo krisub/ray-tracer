@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/krisub/Projects/graphics/ray_tracer/ray/build/cmake_install.cmake",
-		"/Users/krisub/Projects/graphics/ray_tracer/ray/build/src/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
