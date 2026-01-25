@@ -51,32 +51,55 @@ glm::dvec3 RayTracer::trace(double x, double y) {
 }
 
 glm::dvec3 RayTracer::tracePixel(int i, int j) {
-  glm::dvec3 col(0, 0, 0);
+  glm::dvec3 col(0, 0, 0); // col = color
 
   if (!sceneLoaded())
     return col;
 
-  double x = double(i) / double(buffer_width);
-  double y = double(j) / double(buffer_height);
+  // double x = double(i) / double(buffer_width); // og code
+  // double y = double(j) / double(buffer_height); // og code
 
   // if (i == buffer_width / 2 && j == buffer_height / 2) {
   //   debugMode = true;
-  //   std::cout << "tracing center pixel (" << i << "," << j << ")" << std::endl;
+  //   std::cout << "tracing center pixel (" << i << "," << j << ")" <<
+  //   std::endl;
   // } else {
   //   debugMode = false;
   // }
 
-  unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-  col = trace(x, y);
+  // brute force anti aliasing by supersampling
+  int gridSize = int(sqrt(samples));
+  if (gridSize < 1)
+    gridSize = 1;
+
+  for (int p = 0; p < gridSize; ++p) {
+    for (int q = 0; q < gridSize; ++q) {
+      // offset based on grid pos
+      double offsetX = (double(p) + 0.5) / double(gridSize);
+      double offsetY = (double(q) + 0.5) / double(gridSize);
+      // pixel coord + offset normalized
+      double x = (double(i) + offsetX) / double(buffer_width);
+      double y = (double(j) + offsetY) / double(buffer_height);
+
+      col += trace(x, y); // trace subpixel
+    }
+  }
+
+  col /= double(gridSize * gridSize); // average
+
+  unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3; // og code
+  // col = trace(x, y); // og code
 
   // if (debugMode) {
   //   std::cout << "center pixel result: " << col.x << ", " << col.y << ", "
   //             << col.z << std::endl;
   // }
 
-  pixel[0] = (int)(255.0 * col[0]);
-  pixel[1] = (int)(255.0 * col[1]);
-  pixel[2] = (int)(255.0 * col[2]);
+  col = glm::clamp(col, 0.0, 1.0);
+  pixel[0] =
+      (int)(255.0 * col[0]); // og code maybe add +0.5 to round to nearest int?
+  pixel[1] = (int)(255.0 * col[1]); // og code
+  pixel[2] = (int)(255.0 * col[2]); // og code
   return col;
 }
 
@@ -86,6 +109,8 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 // called from here) to handle reflection, refraction, etc etc.
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
+
+  // const double TEST_EPSILON = 1e-3;
 
   if (depth <= 0) {
     return glm::dvec3(0.0, 0.0, 0.0); // stop when depth is 0
@@ -160,11 +185,21 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
           glm::refract(rayDir, normalForRefraction, iorRatio);
 
       if (glm::length(refractionDir) > 0.0) {
+        std::cout << "refraction at t=" << i.getT() << std::endl;
         ray refractedRay(r.at(i) + refractionDir * RAY_EPSILON, refractionDir,
                          glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
 
         double t_val;
         colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
+      } else { // should reflect back inside?
+        std::cout << "total internal reflection at t=" << i.getT() << std::endl;
+        glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
+
+        ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+                         glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+
+        double t_val;
+        colorC += Kt * traceRay(reflectedRay, thresh, depth - 1, t_val);
       }
     }
 
