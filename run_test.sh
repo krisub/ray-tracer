@@ -8,4 +8,7 @@ cd ..
 # ./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/sphere_refract4.json ../output_imgs/sphere_refract4.png
 # ./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/sphere_refract5.json ../output_imgs/sphere_refract5.png
 # ./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/sphere_refract6.json ../output_imgs/sphere_refract6.png
-./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/sphere_refract7.json ../output_imgs/sphere_refract7.png
+# ./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/sphere_refract7.json ../output_imgs/sphere_refract7.png
+# ./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/poles_refract7_copy.json ../output_imgs/sphere_refract7_nosphere.png
+# ./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/spheres_refract7_back.json ../output_imgs/sphere_refract7_back.png
+./build/bin/ray -r 5 /Users/krisub/Projects/graphics/ray_tracer/scenes/simple/spheres_nopoles_back.json ../output_imgs/sphere_refract7_nopoles.png

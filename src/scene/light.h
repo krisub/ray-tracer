@@ -54,6 +54,7 @@ public:
    * transparent objects.
    */
   virtual glm::dvec3 shadowAttenuation(const ray &r,
+                                       const glm::dvec3 &surfaceNormal,
                                        const glm::dvec3 &pos) const = 0;
   /**
    * @brief calculates light intensity falloff based on distance
@@ -120,6 +121,7 @@ public:
    * `-orientation` to see if anything is blocking the light
    */
   virtual glm::dvec3 shadowAttenuation(const ray &r,
+                                       const glm::dvec3 &surfaceNormal,
                                        const glm::dvec3 &pos) const;
 
   /** @brief directional lights do not decay with distance. always 1.0. */
@@ -175,6 +177,7 @@ public:
    * @return glm::dvec3 the attenuation factor
    */
   virtual glm::dvec3 shadowAttenuation(const ray &r,
+                                       const glm::dvec3 &surfaceNormal,
                                        const glm::dvec3 &pos) const;
   /**
    * @brief calculates attentuation with the formula:

@@ -87,9 +87,10 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     if (distAtten < 1e-6)
       continue; // skip if light doesn't contribute anything
 
-    glm::dvec3 shadowAtten = pLight->shadowAttenuation(r, hitPoint);
+    glm::dvec3 shadowAtten = pLight->shadowAttenuation(r, surfaceNormal, hitPoint);
     if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
       continue; // skip diffuse and specular if in shadow
+    // glm::dvec3 shadowAtten = glm::dvec3(1.0, 1.0, 1.0); // TESTING
 
     double diffuseReflection = glm::dot(surfaceNormal, dirToLight);
     if (diffuseReflection > 0) {
@@ -118,7 +119,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   // return kd(i);
   // return glm::clamp(color, glm::dvec3(0.0, 0.0, 0.0),
   //                   glm::dvec3(1.0, 1.0, 1.0));
-  return color; // testing this
+  return color; // TESTING
 }
 
 TextureMap::TextureMap(string filename) {
