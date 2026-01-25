@@ -97,9 +97,9 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 
   col = glm::clamp(col, 0.0, 1.0);
   pixel[0] =
-      (int)(255.0 * col[0]); // og code maybe add +0.5 to round to nearest int?
-  pixel[1] = (int)(255.0 * col[1]); // og code
-  pixel[2] = (int)(255.0 * col[2]); // og code
+      (int)(255.0 * col[0] + 0.5); // og code maybe add +0.5 to round to nearest int?
+  pixel[1] = (int)(255.0 * col[1] + 0.5); // og code
+  pixel[2] = (int)(255.0 * col[2] + 0.5); // og code
   return col;
 }
 
@@ -123,6 +123,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 #endif
 
   if (scene->intersect(r, i)) {
+    t = i.getT();
     // YOUR CODE HERE
     // std::cout << "hit object at t=" << i.getT() << std::endl;
     // An intersection occurred!  We've got work to do. For now, this code gets
@@ -185,14 +186,14 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
           glm::refract(rayDir, normalForRefraction, iorRatio);
 
       if (glm::length(refractionDir) > 0.0) {
-        std::cout << "refraction at t=" << i.getT() << std::endl;
+        // std::cout << "refraction at t=" << i.getT() << std::endl;
         ray refractedRay(r.at(i) + refractionDir * RAY_EPSILON, refractionDir,
                          glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
 
         double t_val;
         colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
       } else { // should reflect back inside?
-        std::cout << "total internal reflection at t=" << i.getT() << std::endl;
+        // std::cout << "total internal reflection at t=" << i.getT() << std::endl;
         glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
 
         ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
@@ -204,6 +205,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     }
 
   } else {
+    t = 0.0;
     // std::cout << "no intersection." << std::endl;
     // No intersection. This ray travels to infinity, so we color
     // it according to the background color, which in this (simple)

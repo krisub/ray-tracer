@@ -116,8 +116,9 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   }
 
   // return kd(i);
-  return glm::clamp(color, glm::dvec3(0.0, 0.0, 0.0),
-                    glm::dvec3(1.0, 1.0, 1.0));
+  // return glm::clamp(color, glm::dvec3(0.0, 0.0, 0.0),
+  //                   glm::dvec3(1.0, 1.0, 1.0));
+  return color; // testing this
 }
 
 TextureMap::TextureMap(string filename) {

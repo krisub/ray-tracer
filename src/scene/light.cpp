@@ -27,7 +27,7 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
   ray currRay = shadowRay;
 
   while (scene->intersect(currRay, i)) {
-    if (glm::length(i.getMaterial().kt(i)) == 0) {
+    if (glm::length(i.getMaterial().kt(i)) < 1e-6) {
       return glm::dvec3(0.0, 0.0, 0.0); // material is opaque so black is ok
     } else {
       // transparent object- attenuate light by kt
@@ -44,10 +44,18 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
 
   return lightAtten;
   // old version
+
   // if (scene->intersect(shadowRay, i)) {
+  //   const Material &m = i.getMaterial();
+
   //   if (i.getT() < RAY_EPSILON)
   //     return glm::dvec3(1.0, 1.0, 1.0);
-  //   return glm::dvec3(0.0, 0.0, 0.0); // black cuz shadow
+
+  //   if (glm::length(m.kt(i)) < 1e-6) {
+  //     return glm::dvec3(0.0, 0.0, 0.0);
+  //   }
+
+  //   return m.kt(i);
   // }
 
   // return glm::dvec3(1.0, 1.0, 1.0); // light cuz not shadow
@@ -109,6 +117,7 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
   // POINT LIGHTS- only care if obj u hit is closer than light
   // if obj behind light doesnt matter
   isect i;
+
   glm::dvec3 lightAtten(1.0, 1.0, 1.0);
   ray currRay = shadowRay;
   double currDist = 0.0;
@@ -117,7 +126,7 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
     currDist += i.getT();
 
     if (currDist < distToLight) {
-      if (glm::length(i.getMaterial().kt(i)) == 0) {
+      if (glm::length(i.getMaterial().kt(i)) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0); // opaque
       } else {                            // transparent
 
@@ -135,14 +144,21 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
     }
   }
 
+  return lightAtten;
+
   // if (scene->intersect(shadowRay, i)) {
   //   if (i.getT() < distToLight && i.getT() > RAY_EPSILON) {
-  //     return glm::dvec3(0.0, 0.0, 0.0);
+
+  //     const Material &m = i.getMaterial();
+  //     if (glm::length(m.kt(i)) < 1e-6) {
+  //       return glm::dvec3(0.0, 0.0, 0.0);
+  //     }
+
+  //     return m.kt(i);
   //   }
   // }
 
-  // return glm::dvec3(1, 1, 1);
-  return lightAtten;
+  // return glm::dvec3(1.0, 1.0, 1.0);
 }
 
 #define VERBOSE 0
