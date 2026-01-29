@@ -25,7 +25,7 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
   progName = argv[0];
   const char *jsonfile = nullptr;
   string cubemap_file;
-  while ((i = getopt(argc, argv, "t:r:w:hj:c:")) != EOF) {
+  while ((i = getopt(argc, argv, "r:w:j:c:t:n:ah")) != EOF) {
     switch (i) {
     case 'r':
       m_nDepth = atoi(optarg);
@@ -89,12 +89,17 @@ int CommandLineUI::run() {
 
     raytracer->traceImage(width, height);
     raytracer->waitRender();
-    // if (aaSwitch()) {
+    if (aaSwitch()) {
+      raytracer->aaImage();
+      raytracer->waitRender();
+      cout << "aaImage() called" << endl;
+    } else {
+      cout << "aaImage() not called" << endl;
+    }
+    // if (m_antiAlias) {
     //   raytracer->aaImage();
     //   raytracer->waitRender();
     // }
-    raytracer->aaImage();
-    raytracer->waitRender();
 
     end = clock();
 

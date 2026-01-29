@@ -57,8 +57,16 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   if (!sceneLoaded())
     return col;
 
-  double x = double(i) / double(buffer_width);  // og code
-  double y = double(j) / double(buffer_height); // og code
+  // if i = 1 and width = 512 -> x = 1/512 -> edge between pixel 0 and pixel 1,
+  // not the center of the pixel
+
+  // double x = double(i) / double(buffer_width);  // og code
+  // double y = double(j) / double(buffer_height); // og code
+
+
+  // to go to center of pixel
+  double x = (double(i) + 0.5) / double(buffer_width);  // og code
+  double y = (double(j) + 0.5) / double(buffer_height); // og code
 
   col = trace(x, y); // og code
   col = glm::clamp(col, 0.0, 1.0);
@@ -389,6 +397,17 @@ int RayTracer::aaImage() {
   // TIP: samples and aaThresh have been synchronized with TraceUI by
   //      RayTracer::traceSetup() function
 
+  /*
+  pixel coordinates (i,j)/(x.y)
+
+  (0, 0) (1, 0) (2, 0) ... (w-1, 0)
+  (0, 1) (1, 1) (2, 1) ... (w-1, 1)
+  ...
+  (0, h-1) (1, h-1) (2, h-1) ... (w-1, h-1)
+
+
+  */
+
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -396,16 +415,29 @@ int RayTracer::aaImage() {
   for (int j = 0; j < buffer_height; ++j) {
     for (int i = 0; i < buffer_width; ++i) {
 
+      // say j = 1, i = 0
+      // and image is 3x3 pixels
+
       glm::dvec3 col(0, 0, 0);
-      int gridSize = int(sqrt(samples));
+      int gridSize = samples; // = 3
+
       if (gridSize < 1)
         gridSize = 1;
 
       for (int p = 0; p < gridSize; ++p) {
         for (int q = 0; q < gridSize; ++q) {
+
+          // at p-q-0
+
+          // offsetX = 0.1666...
+          // offsetY = 0.1666...
           double offsetX = (double(p) + 0.5) / double(gridSize);
           double offsetY = (double(q) + 0.5) / double(gridSize);
 
+          // pixel coord + offset normalized
+          // x = (0 + 0.1666...) / 3 = 0.05555...
+          // y = (1 + 0.1666...) / 3 = 0.38888...
+          // normalizing by image dimensions to pass to trace function
           double x = (double(i) + offsetX) / double(buffer_width);
           double y = (double(j) + offsetY) / double(buffer_height);
 
@@ -418,9 +450,9 @@ int RayTracer::aaImage() {
 
       // overwrite pixel in buffer
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      pixel[0] = (int)(255.0 * col[0]);
-      pixel[1] = (int)(255.0 * col[1]);
-      pixel[2] = (int)(255.0 * col[2]);
+      pixel[0] = (int)(255.0 * col[0] + 0.5);
+      pixel[1] = (int)(255.0 * col[1] + 0.5);
+      pixel[2] = (int)(255.0 * col[2] + 0.5);
     }
   }
   return 0;
