@@ -12,68 +12,42 @@ double DirectionalLight::distanceAttenuation(const glm::dvec3 &) const {
   return 1.0;
 }
 
+/**
+ * @brief shadow attenuation for direction light sources
+ *
+ * @param r ray hitting the point
+ * @param surfaceNormal ADDED BY ME TO TEST SHADOW RAY DIRECTION, CAN REMOVE
+ * @param p point to shade
+ */
 glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
                                                const glm::dvec3 &surfaceNormal,
                                                const glm::dvec3 &p) const {
-  int ec = 1;
   // YOUR CODE HERE:
   // You should implement shadow-handling code here.
-  // const double TEST_EPSILON = 1e-3;
-  glm::dvec3 dtl = glm::normalize(getDirection(p)); // dtl = direction to light
-  // https://digitalrune.github.io/DigitalRune-Documentation/html/3f4d959e-9c98-4a97-8d85-7a73c26145d7.htm
-  glm::dvec3 n = surfaceNormal;
-  if (glm::dot(n, dtl) < 0) {
-    n = -n;
-  }
-  ray shadowRay(p + (RAY_EPSILON * n), dtl, glm::dvec3(1.0, 1.0, 1.0),
-                ray::SHADOW);
-  isect i;
+  glm::dvec3 lightAtten(1.0, 1.0, 1.0);
+  glm::dvec3 dirToLight = getDirection(p);
+  glm::dvec3 currPoint = p;
 
-  if (ec > 0) {
-    glm::dvec3 lightAtten(1.0, 1.0, 1.0);
+  while (true) {
+    ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
+                  glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+    isect i;
+    if (scene->intersect(shadowRay, i)) {
+      const Material &m = i.getMaterial();
+      glm::dvec3 kt = m.kt(i);
+      lightAtten *= kt;
 
-    ray currRay = shadowRay;
-
-    while (scene->intersect(currRay, i)) {
-      if (glm::length(i.getMaterial().kt(i)) < 1e-6) {
-        std::cout << "Opaque object in shadow ray\n";
-        return glm::dvec3(0.0, 0.0, 0.0); // material is opaque so black is ok
-      } else {
-        std::cout << "Transparent object in shadow ray\n";
-        // transparent object- attenuate light by kt
-        lightAtten *= i.getMaterial().kt(i);
-
-        // if (glm::length(lightAtten) < 1e-6) // stop if really dim
-        //   return glm::dvec3(0.0, 0.0, 0.0);
-
-        // continue ray from intersection point
-        glm::dvec3 n2 = i.getN();
-        if (glm::dot(n2, dtl) < 0) {
-          n2 = -n2;
-        }
-        currRay = ray(currRay.at(i) + (RAY_EPSILON * n2), dtl,
-                      glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+      if (glm::length(lightAtten) < 1e-6) {
+        return glm::dvec3(0.0, 0.0, 0.0);
       }
+
+      currPoint = shadowRay.at(i.getT() + RAY_EPSILON);
+    } else {
+      break;
     }
-
-    return lightAtten;
-  }
-  // old version (non ec)
-
-  if (scene->intersect(shadowRay, i)) {
-    const Material &m = i.getMaterial();
-
-    if (i.getT() < RAY_EPSILON)
-      return glm::dvec3(1.0, 1.0, 1.0);
-
-    if (glm::length(m.kt(i)) < 1e-6) {
-      return glm::dvec3(0.0, 0.0, 0.0);
-    }
-
-    return m.kt(i);
   }
 
-  return glm::dvec3(1.0, 1.0, 1.0); // light cuz not shadow
+  return lightAtten;
 }
 
 glm::dvec3 DirectionalLight::getColor() const { return color; }
@@ -82,32 +56,23 @@ glm::dvec3 DirectionalLight::getDirection(const glm::dvec3 &) const {
   return -orientation;
 }
 
+/**
+ * REWRITTEN VERSION
+ */
 double PointLight::distanceAttenuation(const glm::dvec3 &P) const {
   // YOUR CODE HERE
 
   // You'll need to modify this method to attenuate the intensity
   // of the light based on the distance between the source and the
   // point P.  For now, we assume no attenuation and just return 1.0
+  double distToLight = glm::distance(position, P);
 
-  double dist = glm::distance(position, P);
-  /* light.h
-  // These three values are the a, b, and c in the distance attenuation function
-  // (from the slide labelled "Intensity drop-off with distance"):
-  //    f(d) = min( 1, 1/( a + b d + c d^2 ) )
-  float constantTerm;  // a
-  float linearTerm;    // b
-  float quadraticTerm; // c
-  */
-  double atten_denom =
-      /*1.0 /*/ (constantTerm + linearTerm * dist +
-                 quadraticTerm * dist * dist);
-  if (atten_denom < 1e-6) {
-    atten_denom = 1e-6; // div by 0
-  }
+  double quadratic = constantTerm + linearTerm * distToLight +
+                     quadraticTerm * distToLight * distToLight;
+  if (quadratic < 1e-6)
+    return 1.0;
 
-  double attenuation = 1.0 / atten_denom;
-
-  return std::min(1.0, attenuation); // bw 0 and 1
+  return min(1.0, 1.0 / quadratic);
 }
 
 glm::dvec3 PointLight::getColor() const { return color; }
@@ -116,76 +81,47 @@ glm::dvec3 PointLight::getDirection(const glm::dvec3 &P) const {
   return glm::normalize(position - P);
 }
 
+/**
+ * REWRITTEN VERSION
+ */
 glm::dvec3 PointLight::shadowAttenuation(const ray &r,
                                          const glm::dvec3 &surfaceNormal,
                                          const glm::dvec3 &p) const {
-  int ec = 1;
-  // const double TEST_EPSILON = 1e-3;
   // YOUR CODE HERE:
   // You should implement shadow-handling code here.
-  glm::dvec3 dirToLight = position - p;
-  double distToLight =
-      glm::length(dirToLight); // overloading of dtl abbreviation :(
-  dirToLight = glm::normalize(dirToLight);
 
-  glm::dvec3 n = surfaceNormal;
-  if (glm::dot(n, dirToLight) < 0) {
-    n = -n;
-  }
-  ray shadowRay(p + (RAY_EPSILON * n), dirToLight, glm::dvec3(1.0, 1.0, 1.0),
-                ray::SHADOW);
+  glm::dvec3 lightAtten(1.0, 1.0, 1.0);
+  glm::dvec3 currPoint = p;
 
-  // POINT LIGHTS- only care if obj u hit is closer than light
-  // if obj behind light doesnt matter
-  isect i;
+  while (true) {
+    glm::dvec3 pointToLight =
+        position - currPoint; // vector from point to light
+    double distToLight = glm::length(pointToLight);
+    glm::dvec3 dirToLight = glm::normalize(pointToLight);
 
-  if (ec > 0) {
-    glm::dvec3 lightAtten(1.0, 1.0, 1.0);
-    ray currRay = shadowRay;
-    double currDist = 0.0;
+    ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
+                  glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+    isect i;
 
-    while (scene->intersect(currRay, i)) {
-      currDist += i.getT();
-
-      if (currDist < distToLight) {
-        if (glm::length(i.getMaterial().kt(i)) < 1e-6) {
-          return glm::dvec3(0.0, 0.0, 0.0); // opaque
-        } else {                            // transparent
-
-          lightAtten *= i.getMaterial().kt(i);
-
-          // if (glm::length(lightAtten) < 1e-6)
-          //   return glm::dvec3(0.0, 0.0, 0.0);
-
-          glm::dvec3 n2 = i.getN();
-          if (glm::dot(n2, dirToLight) < 0) {
-            n2 = -n2;
-          }
-          currRay = ray(currRay.at(i) + (RAY_EPSILON * n2), dirToLight,
-                        glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
-        }
-
-      } else {
-        break; // past light
+    if (scene->intersect(shadowRay, i)) {
+      if (i.getT() >= distToLight - RAY_EPSILON) {
+        break; // behind light
       }
-    }
 
-    return lightAtten;
-  }
+      glm::dvec3 kt = i.getMaterial().kt(i);
+      lightAtten *= kt;
 
-  if (scene->intersect(shadowRay, i)) {
-    if (i.getT() < distToLight && i.getT() > RAY_EPSILON) {
-
-      const Material &m = i.getMaterial();
-      if (glm::length(m.kt(i)) < 1e-6) {
+      if (glm::length(lightAtten) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0);
       }
 
-      return m.kt(i);
+      currPoint = shadowRay.at(i.getT() + RAY_EPSILON);
+    } else {
+      break;
     }
   }
 
-  return glm::dvec3(1.0, 1.0, 1.0);
+  return lightAtten;
 }
 
 #define VERBOSE 0

@@ -28,7 +28,7 @@ implementation plan:
   - still need to add texture interpolation
 - light and shadow
   - done? 
-  - see if i can do partial shadows? but i thought its not possible with rt...
+  - see if i can do partial shadows
 - phong shading
   - cuz this has to be done before u can see the shadows duh
   - done
