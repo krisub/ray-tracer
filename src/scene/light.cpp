@@ -32,10 +32,27 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
     ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
                   glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
     isect i;
+
     if (scene->intersect(shadowRay, i)) {
       const Material &m = i.getMaterial();
       glm::dvec3 kt = m.kt(i);
-      lightAtten *= kt;
+
+      if (glm::length(kt) < 1e-6) {
+        return glm::dvec3(0.0, 0.0, 0.0);
+      }
+
+      // lightAtten *= kt;
+      double direction = glm::dot(i.getN(), dirToLight);
+
+      if (direction > 0) {
+        // traveling out of the material
+        double distance =
+            i.getT(); // the last time we traveled was entering the material
+        lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
+      } else {
+        // traveling into the material? do something?
+        // lightAtten *= kt;
+      }
 
       if (glm::length(lightAtten) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0);
@@ -109,7 +126,19 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
       }
 
       glm::dvec3 kt = i.getMaterial().kt(i);
-      lightAtten *= kt;
+      // lightAtten *= kt;
+      if (glm::length(kt) < 1e-6) {
+        return glm::dvec3(0.0, 0.0, 0.0);
+      }
+
+      double direction = glm::dot(i.getN(), dirToLight);
+
+      if (direction > 0) {
+        double distance = i.getT();
+        lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
+      } else {
+        // ?? dunno
+      }
 
       if (glm::length(lightAtten) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0);

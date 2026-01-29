@@ -194,13 +194,13 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
       } else { // should reflect back inside?
         // std::cout << "total internal reflection at t=" << i.getT() << std::endl;
-        glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
+        // glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
 
-        ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
-                         glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+        // ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+        //                  glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
 
-        double t_val;
-        colorC += Kt * traceRay(reflectedRay, thresh, depth - 1, t_val);
+        // double t_val;
+        // colorC += Kt * traceRay(reflectedRay, thresh, depth - 1, t_val);
       }
     }
 
