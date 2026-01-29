@@ -6,6 +6,7 @@
 #include "scene/light.h"
 #include "scene/material.h"
 #include "scene/ray.h"
+#include <omp.h>
 
 #include "parser/JsonParser.h"
 #include "parser/Parser.h"
@@ -37,7 +38,7 @@ bool debugMode = false;
 glm::dvec3 RayTracer::trace(double x, double y) {
   // Clear out the ray cache in the scene for debugging purposes,
   if (TraceUI::m_debug) {
-    scene->clearIntersectCache();
+    scene->clearIntersectCache(); // do not run debug mode with multithreading
   }
 
   ray r(glm::dvec3(0, 0, 0), glm::dvec3(0, 0, 0), glm::dvec3(1, 1, 1),
@@ -56,8 +57,18 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   if (!sceneLoaded())
     return col;
 
-  // double x = double(i) / double(buffer_width); // og code
-  // double y = double(j) / double(buffer_height); // og code
+  double x = double(i) / double(buffer_width);  // og code
+  double y = double(j) / double(buffer_height); // og code
+
+  col = trace(x, y); // og code
+  col = glm::clamp(col, 0.0, 1.0);
+
+  unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+  pixel[0] = (int)(255.0 * col[0]);
+  pixel[1] = (int)(255.0 * col[1]);
+  pixel[2] = (int)(255.0 * col[2]);
+
+  return col;
 
   // if (i == buffer_width / 2 && j == buffer_height / 2) {
   //   debugMode = true;
@@ -68,39 +79,40 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   // }
 
   // brute force anti aliasing by supersampling
-  int gridSize = int(sqrt(samples));
-  if (gridSize < 1)
-    gridSize = 1;
+  // int gridSize = int(sqrt(samples));
+  // if (gridSize < 1)
+  //   gridSize = 1;
 
-  for (int p = 0; p < gridSize; ++p) {
-    for (int q = 0; q < gridSize; ++q) {
-      // offset based on grid pos
-      double offsetX = (double(p) + 0.5) / double(gridSize);
-      double offsetY = (double(q) + 0.5) / double(gridSize);
-      // pixel coord + offset normalized
-      double x = (double(i) + offsetX) / double(buffer_width);
-      double y = (double(j) + offsetY) / double(buffer_height);
+  // for (int p = 0; p < gridSize; ++p) {
+  //   for (int q = 0; q < gridSize; ++q) {
+  //     // offset based on grid pos
+  //     double offsetX = (double(p) + 0.5) / double(gridSize);
+  //     double offsetY = (double(q) + 0.5) / double(gridSize);
+  //     // pixel coord + offset normalized
+  //     double x = (double(i) + offsetX) / double(buffer_width);
+  //     double y = (double(j) + offsetY) / double(buffer_height);
 
-      col += trace(x, y); // trace subpixel
-    }
-  }
+  //     col += trace(x, y); // trace subpixel
+  //   }
+  // }
 
-  col /= double(gridSize * gridSize); // average
+  // col /= double(gridSize * gridSize); // average
 
-  unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3; // og code
-  // col = trace(x, y); // og code
+  // unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3; // og
+  // code
 
   // if (debugMode) {
   //   std::cout << "center pixel result: " << col.x << ", " << col.y << ", "
   //             << col.z << std::endl;
   // }
 
-  col = glm::clamp(col, 0.0, 1.0);
-  pixel[0] =
-      (int)(255.0 * col[0] + 0.5); // og code maybe add +0.5 to round to nearest int?
-  pixel[1] = (int)(255.0 * col[1] + 0.5); // og code
-  pixel[2] = (int)(255.0 * col[2] + 0.5); // og code
-  return col;
+  // col = glm::clamp(col, 0.0, 1.0);
+  // pixel[0] =
+  //     (int)(255.0 * col[0] + 0.5); // og code maybe add +0.5 to round to
+  //     nearest int?
+  // pixel[1] = (int)(255.0 * col[1] + 0.5); // og code
+  // pixel[2] = (int)(255.0 * col[2] + 0.5); // og code
+  // return col;
 }
 
 #define VERBOSE 0
@@ -158,8 +170,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
     glm::dvec3 Kt = m.kt(i); // refractive (transmissive) component
     if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
-      glm::dvec3 rayDir = r.getDirection();
-      glm::dvec3 surfaceNormal = i.getN();
+      glm::dvec3 rayDir = glm::normalize(r.getDirection());
+      glm::dvec3 surfaceNormal = glm::normalize(i.getN());
       double indexOfRefraction = m.index(i);
 
       /*
@@ -193,7 +205,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         double t_val;
         colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
       } else { // should reflect back inside?
-        // std::cout << "total internal reflection at t=" << i.getT() << std::endl;
+        // std::cout << "total internal reflection at t=" << i.getT() <<
+        // std::endl;
         glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
 
         ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
@@ -348,6 +361,10 @@ void RayTracer::traceImage(int w, int h) {
   // Always call traceSetup before rendering anything.
   traceSetup(w, h);
 
+  if (threads > 0) {
+    omp_set_num_threads(threads);
+  }
+
   // YOUR CODE HERE
   // FIXME: Start one or more threads for ray tracing
   //
@@ -356,6 +373,8 @@ void RayTracer::traceImage(int w, int h) {
   //
   //       An asynchronous traceImage lets the GUI update your results
   //       while rendering.
+
+#pragma omp parallel for schedule(dynamic)
   for (int j = 0; j < h; ++j) {
     for (int i = 0; i < w; ++i) {
       tracePixel(i, j);
@@ -369,6 +388,41 @@ int RayTracer::aaImage() {
   //
   // TIP: samples and aaThresh have been synchronized with TraceUI by
   //      RayTracer::traceSetup() function
+
+  if (threads > 0)
+    omp_set_num_threads(threads);
+
+#pragma omp parallel for schedule(dynamic)
+  for (int j = 0; j < buffer_height; ++j) {
+    for (int i = 0; i < buffer_width; ++i) {
+
+      glm::dvec3 col(0, 0, 0);
+      int gridSize = int(sqrt(samples));
+      if (gridSize < 1)
+        gridSize = 1;
+
+      for (int p = 0; p < gridSize; ++p) {
+        for (int q = 0; q < gridSize; ++q) {
+          double offsetX = (double(p) + 0.5) / double(gridSize);
+          double offsetY = (double(q) + 0.5) / double(gridSize);
+
+          double x = (double(i) + offsetX) / double(buffer_width);
+          double y = (double(j) + offsetY) / double(buffer_height);
+
+          col += trace(x, y);
+        }
+      }
+
+      col /= double(gridSize * gridSize);
+      col = glm::clamp(col, 0.0, 1.0);
+
+      // overwrite pixel in buffer
+      unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+      pixel[0] = (int)(255.0 * col[0]);
+      pixel[1] = (int)(255.0 * col[1]);
+      pixel[2] = (int)(255.0 * col[2]);
+    }
+  }
   return 0;
 }
 
@@ -379,6 +433,8 @@ bool RayTracer::checkRender() {
   //
   // TIPS: Introduce an array to track the status of each worker thread.
   //       This array is maintained by the worker threads.
+
+  // openmp blocks main thread until rendering is completed
   return true;
 }
 
@@ -389,6 +445,8 @@ void RayTracer::waitRender() {
   //        traceImage implementation.
   //
   // TIPS: Join all worker threads here.
+
+  // openmp automatically waits/joins all threads before the functino returns
 }
 
 glm::dvec3 RayTracer::getPixel(int i, int j) {

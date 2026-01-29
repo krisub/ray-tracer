@@ -34,6 +34,11 @@ ENDIF(NOT src)
 
 add_executable(ray ${src})
 
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+	target_link_libraries(ray OpenMP::OpenMP_CXX)
+endif()
+
 message(STATUS "ray added, files ${src}")
 
 target_link_libraries(ray ${OPENGL_gl_LIBRARY})

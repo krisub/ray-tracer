@@ -300,6 +300,9 @@ void GraphicalUI::cb_render(Fl_Widget *o, void *) {
       auto t_total =
           std::chrono::duration<double, std::ratio<1>>(t_now - t_start).count();
       aaStart = now = prev = clock();
+
+      pUI->raytracer->aaImage(); // added
+
       while (!pUI->raytracer->checkRender()) {
         // check for input and refresh view every so
         // often while tracing
