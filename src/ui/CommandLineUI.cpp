@@ -92,9 +92,9 @@ int CommandLineUI::run() {
     if (aaSwitch()) {
       raytracer->aaImage();
       raytracer->waitRender();
-      cout << "aaImage() called" << endl;
+      // cout << "aaImage() called" << endl;
     } else {
-      cout << "aaImage() not called" << endl;
+      // cout << "aaImage() not called" << endl;
     }
     // if (m_antiAlias) {
     //   raytracer->aaImage();

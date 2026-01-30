@@ -95,7 +95,13 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     // shadowAtten = glm::dvec3(1.0, 1.0, 1.0); // TESTING
 
     double diffuseDot = glm::dot(surfaceNormal, dirToLight);
-    double diffuseReflection = glm::abs(diffuseDot);
+    double diffuseReflection;
+
+    if (kt(i).x > 1e-6 || kt(i).y > 1e-6 || kt(i).z > 1e-6) {
+      diffuseReflection = glm::abs(diffuseDot);
+    } else {
+      diffuseReflection = std::max(0.0, diffuseDot);
+    }
 
     if (diffuseReflection > 0) {
       glm::dvec3 diffuse = kd(i) * pLight->getColor() * diffuseReflection;

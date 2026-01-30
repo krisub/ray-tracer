@@ -41,7 +41,6 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
         return glm::dvec3(0.0, 0.0, 0.0);
       }
 
-      // lightAtten *= kt;
       double direction = glm::dot(i.getN(), dirToLight);
 
       if (direction > 0) {
@@ -123,7 +122,6 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
       }
 
       glm::dvec3 kt = i.getMaterial().kt(i);
-      // lightAtten *= kt;
       if (glm::length(kt) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0);
       }
