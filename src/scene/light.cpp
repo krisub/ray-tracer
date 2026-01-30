@@ -86,6 +86,7 @@ double PointLight::distanceAttenuation(const glm::dvec3 &P) const {
     return 1.0;
 
   return min(1.0, 1.0 / quadratic);
+  // return 1.0 / quadratic;
 }
 
 glm::dvec3 PointLight::getColor() const { return color; }

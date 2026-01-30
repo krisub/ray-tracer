@@ -112,4 +112,18 @@ void TraceGLWindow::saveImage(char *iname) {
     writeBMP(iname, m_nDrawWidth, m_nDrawHeight, buf);
 }
 
+void TraceGLWindow::tracePixelPrecision(int x, int y) {
+  if (raytracer) {
+    if (!raytracer->isReady())
+      raytracer->traceSetup(m_nWindowWidth, m_nWindowHeight);
+
+    debugMode = true;
+    raytracer->tracePixel(x, y);
+
+    ((GraphicalUI *)traceUI)->m_debuggingWindow->m_debuggingView->redraw();
+    debugMode = false;
+    refresh();
+  }
+}
+
 void TraceGLWindow::setRayTracer(RayTracer *tracer) { raytracer = tracer; }

@@ -444,6 +444,15 @@ void GraphicalUI::stopTracing() {
   //	while(!doneTrace)	Fl::wait();
 }
 
+void GraphicalUI::cb_tracePixel(Fl_Widget *o, void *v) {
+  GraphicalUI *pUI = (GraphicalUI *)(v);
+
+  int x = (int)pUI->pixelXInput->value();
+  int y = (int)pUI->pixelYInput->value();
+
+  pUI->m_traceGlWindow->tracePixelPrecision(x, y);
+}
+
 GraphicalUI::GraphicalUI() : refreshInterval(10) {
   // init.
   m_threads = std::max(std::thread::hardware_concurrency(), (unsigned)1);
@@ -679,6 +688,11 @@ GraphicalUI::GraphicalUI() : refreshInterval(10) {
   m_debuggingDisplayCheckButton->user_data((void *)(this));
   m_debuggingDisplayCheckButton->callback(cb_debuggingDisplayCheckButton);
   m_debuggingDisplayCheckButton->value(m_displayDebuggingInfo);
+
+  pixelXInput = new Fl_Value_Input(230, 419, 50, 25, "X:");
+  pixelYInput = new Fl_Value_Input(310, 419, 50, 25, "Y:");
+  tracePixelButton = new Fl_Button(370, 419, 65, 25, "Trace");
+  tracePixelButton->callback(cb_tracePixel, this);
 
   m_mainWindow->callback(cb_exit2);
   m_mainWindow->when(FL_HIDE);

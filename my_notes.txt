@@ -1,5 +1,7 @@
 TODO: TEST ON LAB MACHINES.
 
+cd build && make -j8 && ./bin/ray && cd ..
+
 the commands to run stuff!!
 
 macOS Sequoia

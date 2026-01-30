@@ -86,7 +86,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
     double distAtten = pLight->distanceAttenuation(hitPoint);
     if (distAtten < 1e-6)
-      continue; // skip if light doesn't contribute anything
+      continue; // skip if li ght doesn't contribute anything
 
     glm::dvec3 shadowAtten =
         pLight->shadowAttenuation(r, surfaceNormal, hitPoint);
@@ -97,6 +97,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     double diffuseDot = glm::dot(surfaceNormal, dirToLight);
     double diffuseReflection;
 
+    // ADDED TO FIX CONE AND SPHERE AT THE SAME TIME
     if (kt(i).x > 1e-6 || kt(i).y > 1e-6 || kt(i).z > 1e-6) {
       diffuseReflection = glm::abs(diffuseDot);
     } else {

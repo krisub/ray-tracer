@@ -30,6 +30,8 @@ public:
 
   void setRayTracer(RayTracer *tracer);
 
+  void tracePixelPrecision(int x, int y);
+
 private:
   RayTracer *raytracer;
   int m_nWindowWidth, m_nWindowHeight;

@@ -12,6 +12,7 @@
 #include <FL/Fl_Check_Button.H>
 #include <FL/Fl_File_Chooser.H>
 #include <FL/Fl_Menu_Bar.H>
+#include <FL/Fl_Value_Input.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Window.H>
 
@@ -55,6 +56,11 @@ public:
 
   Fl_Button *m_renderButton;
   Fl_Button *m_stopButton;
+
+  Fl_Value_Input *pixelXInput;
+  Fl_Value_Input *pixelYInput;
+  Fl_Button *tracePixelButton;
+  static void cb_tracePixel(Fl_Widget *o, void *v);
 
   CubeMapChooser *m_cubeMapChooser;
 
