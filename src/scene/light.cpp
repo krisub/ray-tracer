@@ -49,9 +49,6 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
         double distance =
             i.getT(); // the last time we traveled was entering the material
         lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
-      } else {
-        // traveling into the material? do something?
-        // lightAtten *= kt;
       }
 
       if (glm::length(lightAtten) < 1e-6) {
@@ -136,8 +133,6 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
       if (direction > 0) {
         double distance = i.getT();
         lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
-      } else {
-        // ?? dunno
       }
 
       if (glm::length(lightAtten) < 1e-6) {

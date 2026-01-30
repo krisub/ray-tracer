@@ -13,6 +13,7 @@ extern bool debugMode;
 
 Material::~Material() {}
 
+// TODO CHANGE THIS TO MATCH THE SLIDES
 // Apply the phong model to this point on the surface of the object, returning
 // the color of that point.
 glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
@@ -73,33 +74,39 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   */
   // std::cout << "shading at t=" << i.getT() << std::endl;
   glm::dvec3 hitPoint = r.at(i);
-  glm::dvec3 surfaceNormal = i.getN();
+  glm::dvec3 surfaceNormal = glm::normalize(i.getN());
   glm::dvec3 cameraDir =
       glm::normalize(-r.getDirection()); // negative ray direction
   glm::dvec3 color = ke(i) + ka(i) * scene->ambient();
 
   for (const auto &pLight : scene->getAllLights()) {
-    glm::dvec3 dirToLight =
-        pLight->getDirection(hitPoint); // direction from SURFACE (from the
-                                        // intersection/hit point) to light
+    glm::dvec3 dirToLight = glm::normalize(
+        pLight->getDirection(hitPoint)); // direction from SURFACE (from the
+                                         // intersection/hit point) to light
 
     double distAtten = pLight->distanceAttenuation(hitPoint);
     if (distAtten < 1e-6)
       continue; // skip if light doesn't contribute anything
 
-    glm::dvec3 shadowAtten = pLight->shadowAttenuation(r, surfaceNormal, hitPoint);
+    glm::dvec3 shadowAtten =
+        pLight->shadowAttenuation(r, surfaceNormal, hitPoint);
     if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
       continue; // skip diffuse and specular if in shadow
-    // glm::dvec3 shadowAtten = glm::dvec3(1.0, 1.0, 1.0); // TESTING
+    // shadowAtten = glm::dvec3(1.0, 1.0, 1.0); // TESTING
 
-    double diffuseReflection = glm::dot(surfaceNormal, dirToLight);
+    double diffuseDot = glm::dot(surfaceNormal, dirToLight);
+    double diffuseReflection = glm::abs(diffuseDot);
+
     if (diffuseReflection > 0) {
       glm::dvec3 diffuse = kd(i) * pLight->getColor() * diffuseReflection;
       color += distAtten * shadowAtten * diffuse;
 
       // only do specular if diffuse component exists
+      glm::dvec3 effectiveNormal =
+          (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
       glm::dvec3 reflectionVector = glm::normalize(
-          (2.0 * diffuseReflection * surfaceNormal) - dirToLight);
+          (2.0 * diffuseReflection * effectiveNormal) - dirToLight);
+
       double specularReflection = glm::dot(reflectionVector, cameraDir);
       if (specularReflection > 0) {
         double shine = shininess(i);

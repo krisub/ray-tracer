@@ -109,7 +109,7 @@ protected:
   // for individual rays.  Disabled by default for efficiency
   // reasons.
   bool m_displayDebuggingInfo = false;
-  bool m_antiAlias = false;    // Is antialiasing on?
+  bool m_antiAlias = true;    // Is antialiasing on?
   bool m_kdTree = true;        // use kd-tree?
   bool m_shadows = true;       // compute shadows?
   bool m_smoothshade = true;   // turn on/off smoothshading?

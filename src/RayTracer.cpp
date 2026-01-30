@@ -63,7 +63,6 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   // double x = double(i) / double(buffer_width);  // og code
   // double y = double(j) / double(buffer_height); // og code
 
-
   // to go to center of pixel
   double x = (double(i) + 0.5) / double(buffer_width);  // og code
   double y = (double(j) + 0.5) / double(buffer_height); // og code
@@ -148,7 +147,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     // std::cout << "hit object at t=" << i.getT() << std::endl;
     // An intersection occurred!  We've got work to do. For now, this code gets
     // the material for the surface that was intersected, and asks that material
-    // to provide a color for the ray.
+    // to provide a color for the ray.x
 
     // This is a great place to insert code for recursive ray tracing. Instead
     // of just returning the result of shade(), add some more steps: add in the
@@ -163,6 +162,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     // surface and one perpendicular to surface normal:
     //  refraction: snell's law
 
+    // what is atten in ray.h
     glm::dvec3 Kr = m.kr(i); // reflective component
     if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
       glm::dvec3 rayDir = glm::normalize(r.getDirection());
@@ -215,13 +215,13 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
       } else { // should reflect back inside?
         // std::cout << "total internal reflection at t=" << i.getT() <<
         // std::endl;
-        glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
+        // glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
 
-        ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
-                         glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+        // ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+        //                  glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
 
-        double t_val;
-        colorC += Kt * traceRay(reflectedRay, thresh, depth - 1, t_val);
+        // double t_val;
+        // colorC += Kt * traceRay(reflectedRay, thresh, depth - 1, t_val);
       }
     }
 
@@ -450,7 +450,7 @@ int RayTracer::aaImage() {
 
       // overwrite pixel in buffer
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      pixel[0] = (int)(255.0 * col[0] + 0.5);
+      pixel[0] = (int)(255.0 * col[0] + 0.5); // do i need the +0.5
       pixel[1] = (int)(255.0 * col[1] + 0.5);
       pixel[2] = (int)(255.0 * col[2] + 0.5);
     }
