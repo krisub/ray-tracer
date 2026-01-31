@@ -13,6 +13,26 @@ extern bool debugMode;
 
 Material::~Material() {}
 
+/*
+get Emissive component (self-glowing light)
+glm::dvec3 ke(const isect &i) const { return _ke.value(i); }
+
+get Ambient component (interaction with background light)
+glm::dvec3 ka(const isect &i) const { return _ka.value(i); }
+
+get Specular component (shiny highlights)
+glm::dvec3 ks(const isect &i) const { return _ks.value(i); }
+
+get Diffuse component (matte surface color)
+glm::dvec3 kd(const isect &i) const { return _kd.value(i); }
+
+get Reflective component (mirror-like reflection)
+glm::dvec3 kr(const isect &i) const { return _kr.value(i); }
+
+get Transmissive component (refraction/transparency)
+glm::dvec3 kt(const isect &i) const { return _kt.value(i); }
+*/
+
 // TODO CHANGE THIS TO MATCH THE SLIDES
 // Apply the phong model to this point on the surface of the object, returning
 // the color of that point.
@@ -86,13 +106,12 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
     double distAtten = pLight->distanceAttenuation(hitPoint);
     if (distAtten < 1e-6)
-      continue; // skip if li ght doesn't contribute anything
+      continue; // skip if light doesn't contribute anything
 
     glm::dvec3 shadowAtten =
         pLight->shadowAttenuation(r, surfaceNormal, hitPoint);
     if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
       continue; // skip diffuse and specular if in shadow
-    // shadowAtten = glm::dvec3(1.0, 1.0, 1.0); // TESTING
 
     double diffuseDot = glm::dot(surfaceNormal, dirToLight);
     double diffuseReflection;
@@ -103,36 +122,30 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     } else {
       diffuseReflection = std::max(0.0, diffuseDot);
     }
+    
+    // if (kd(i) != glm::dvec3(0, 0, 0))
+    //   cout << "kd is " << kd(i) << endl;
 
     if (diffuseReflection > 0) {
       glm::dvec3 diffuse = kd(i) * pLight->getColor() * diffuseReflection;
       color += distAtten * shadowAtten * diffuse;
-
-      // only do specular if diffuse component exists
-      glm::dvec3 effectiveNormal =
-          (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
-      glm::dvec3 reflectionVector = glm::normalize(
-          (2.0 * diffuseReflection * effectiveNormal) - dirToLight);
-
-      double specularReflection = glm::dot(reflectionVector, cameraDir);
-      if (specularReflection > 0) {
-        double shine = shininess(i);
-        glm::dvec3 specular =
-            ks(i) * pLight->getColor() * pow(specularReflection, shine);
-        color += distAtten * shadowAtten * specular;
-      }
     }
 
-    // std::cout << "Light: " << (pLight->getColor().x) << " "
-    //           << "DistAtten: " << distAtten
-    //           << " ShadowAtten: " << (shadowAtten.x) << std::endl;
-    // std::cout << "DiffuseReflection (N dot L): " << diffuseReflection
-    //           << std::endl;
+    // only do specular if diffuse component exists
+    glm::dvec3 effectiveNormal =
+        (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
+    glm::dvec3 reflectionVector = glm::normalize(
+        (2.0 * glm::abs(diffuseDot) * effectiveNormal) - dirToLight);
+
+    double specularReflection = glm::dot(reflectionVector, cameraDir);
+    if (specularReflection > 0) {
+      double shine = shininess(i);
+      glm::dvec3 specular =
+          ks(i) * pLight->getColor() * pow(specularReflection, shine);
+      color += distAtten * shadowAtten * specular;
+    }
   }
 
-  // return kd(i);
-  // return glm::clamp(color, glm::dvec3(0.0, 0.0, 0.0),
-  //                   glm::dvec3(1.0, 1.0, 1.0));
   return color; // TESTING
 }
 

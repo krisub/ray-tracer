@@ -212,7 +212,10 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                          glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
 
         double t_val;
-        colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
+        glm::dvec3 incomingLight =
+            traceRay(refractedRay, thresh, depth - 1, t_val);
+        colorC += incomingLight;
+        // colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
       } else { // should reflect back inside?
         // std::cout << "total internal reflection at t=" << i.getT() <<
         // std::endl;
@@ -222,7 +225,9 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                          glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
 
         double t_val;
-        colorC += traceRay(reflectedRay, thresh, depth - 1, t_val);
+        glm::dvec3 incomingLight =
+            traceRay(reflectedRay, thresh, depth - 1, t_val);
+        colorC += incomingLight;
       }
     }
 
@@ -238,7 +243,6 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     // traceUI->getCubeMap();
     //       Check traceUI->cubeMap() to see if cubeMap is loaded
     //       and enabled.
-
     colorC = glm::dvec3(0.0, 0.0, 0.0);
   }
 #if VERBOSE
