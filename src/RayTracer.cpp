@@ -214,20 +214,24 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         double t_val;
         glm::dvec3 incomingLight =
             traceRay(refractedRay, thresh, depth - 1, t_val);
+        if (cosIncidence < 0)
+          incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
         colorC += incomingLight;
         // colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
       } else { // should reflect back inside?
+        // TODO: add flag to enable this
         // std::cout << "total internal reflection at t=" << i.getT() <<
-        // std::endl;
-        glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
+        // std::endl; std::endl;
+        // glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
 
-        ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
-                         glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+        // ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+        //                  glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
 
-        double t_val;
-        glm::dvec3 incomingLight =
-            traceRay(reflectedRay, thresh, depth - 1, t_val);
-        colorC += incomingLight;
+        // double t_val;
+        // glm::dvec3 incomingLight =
+        //     traceRay(reflectedRay, thresh, depth - 1, t_val);
+        // incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
+        // colorC += incomingLight;
       }
     }
 

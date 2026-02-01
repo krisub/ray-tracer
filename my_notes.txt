@@ -21,6 +21,15 @@ python3 raycheck.py # doesn't work because of macos version
 ./build/bin/ray
 # TODO. test on lab machines.
 
+TODO (01/31):
+- add flag for tir
+- implement better aa and add flag
+- multiple overlapping transparent objects
+- light source within an object
+- backface culling
+- arbitrary btrfs
+- figure out the other ec
+- 
 
 
 

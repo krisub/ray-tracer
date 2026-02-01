@@ -39,11 +39,8 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
     case 'c':
       cubemap_file = optarg;
       break;
-    case 't':
+    case 't':                   // ADDED BY ME
       m_threads = atoi(optarg); // thread count
-      break;
-    case 'a':
-      m_antiAlias = true;
       break;
     case 'n':
       m_nSuperSamples = atoi(optarg);

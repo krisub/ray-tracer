@@ -426,7 +426,7 @@ def raycheck(args):
     ):
         return
 
-    cmd_args = ["-r", "5", "-t", "8"]
+    cmd_args = ["-r", "5"]
     if args.json:
         cmd_args += ["-j", args.json]
     if args.cubemap:
