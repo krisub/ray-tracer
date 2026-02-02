@@ -17,6 +17,7 @@ import functools
 from scipy.ndimage import uniform_filter
 from pathlib import Path
 import signal
+import time
 
 
 def _msg(text, level, color):
@@ -413,6 +414,14 @@ def check_ref_signature(refcache_dir, refbin, json, cubemap):
 
 
 def raycheck(args):
+    timedir = os.path.join(args.out, "timing")
+    os.makedirs(timedir, exist_ok=True)
+    timecsv = os.path.join(timedir, "render_times.csv")
+    
+    if not os.path.exists(timecsv):
+        with open(timecsv, "w") as f:
+            f.write("test-name,seconds\n")
+
     refcache_dir = (
         os.path.join(args.out, "refcache") if not args.refcache else args.refcache
     )
@@ -468,9 +477,20 @@ def raycheck(args):
                 alist = [args.exec] + cmd_args + [rayfn, imagefn]
                 _info("Running command: {}".format(" ".join(alist)))
                 try:
+                    start = time.perf_counter()
                     subprocess.run(
                         alist, stdout=stdout, stderr=stderr, timeout=args.timelimit
                     )
+                    end = time.perf_counter()
+                    elapsed_sec = end - start
+                    
+                    with open(timecsv, "a") as tf:
+                        tf.write(
+                            "{}, {:.6f}\n".format(
+                                outstem, elapsed_sec
+                            )
+                        )
+                
                 except KeyboardInterrupt:
                     raise KeyboardInterrupt
                 except subprocess.TimeoutExpired:

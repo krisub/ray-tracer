@@ -22,6 +22,8 @@ python3 raycheck.py # doesn't work because of macos version
 # TODO. test on lab machines.
 
 TODO (01/31):
+- run sancheck
+- compile binary in release mode for openmp
 - add flag for tir
 - implement better aa and add flag
 - multiple overlapping transparent objects
@@ -29,14 +31,14 @@ TODO (01/31):
 - backface culling
 - arbitrary btrfs
 - figure out the other ec
-- 
 
+p2:
+bvh tree, texture/cubemap, and multithreading
 
 
 implementation plan:
 - intersections
   - ray triangle intersection should be done
-  - still need to add texture interpolation
 - light and shadow
   - done? 
   - see if i can do partial shadows
