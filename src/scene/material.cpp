@@ -6,6 +6,8 @@ extern TraceUI *traceUI;
 
 #include "../fileio/images.h"
 #include <glm/gtx/io.hpp>
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 using namespace std;
@@ -172,7 +174,41 @@ glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
   // and use these to perform bilinear interpolation
   // of the values.
 
-  return glm::dvec3(1, 1, 1);
+  if (data.empty() || width <= 0 || height <= 0) {
+    return glm::dvec3(1.0, 1.0, 1.0);
+  }
+
+  auto clamp01 = [](double v) {
+    if (v < 0.0)
+      return 0.0;
+    if (v > 1.0)
+      return 1.0;
+    return v;
+  };
+
+  double u = clamp01(coord.x);
+  double v = clamp01(coord.y);
+
+  double x = u * (width - 1);
+  double y = v * (height - 1);
+
+  int x0 = static_cast<int>(floor(x));
+  int y0 = static_cast<int>(floor(y));
+  int x1 = std::min(x0 + 1, width - 1);
+  int y1 = std::min(y0 + 1, height - 1);
+
+  double dx = x - x0;
+  double dy = y - y0;
+
+  glm::dvec3 c00 = getPixelAt(x0, y0);
+  glm::dvec3 c10 = getPixelAt(x1, y0);
+  glm::dvec3 c01 = getPixelAt(x0, y1);
+  glm::dvec3 c11 = getPixelAt(x1, y1);
+
+  glm::dvec3 c0 = (1.0 - dx) * c00 + dx * c10;
+  glm::dvec3 c1 = (1.0 - dx) * c01 + dx * c11;
+
+  return (1.0 - dy) * c0 + dy * c1;
 }
 
 glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
@@ -181,7 +217,28 @@ glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
   // In order to add texture mapping support to the
   // raytracer, you need to implement this function.
 
-  return glm::dvec3(1, 1, 1);
+  if (data.empty() || width <= 0 || height <= 0) {
+    return glm::dvec3(1.0, 1.0, 1.0);
+  }
+
+  x = std::max(0, std::min(x, width - 1));
+  y = std::max(0, std::min(y, height - 1));
+
+  int rowStride = static_cast<int>(data.size() / height);
+  int channels = (width > 0 && rowStride % width == 0) ? rowStride / width : 3;
+  if (channels < 3)
+    channels = 3;
+
+  int idx = y * rowStride + x * channels;
+  if (idx + 2 >= static_cast<int>(data.size())) {
+    return glm::dvec3(1.0, 1.0, 1.0);
+  }
+
+  double r = static_cast<double>(data[idx]) / 255.0;
+  double g = static_cast<double>(data[idx + 1]) / 255.0;
+  double b = static_cast<double>(data[idx + 2]) / 255.0;
+
+  return glm::dvec3(r, g, b);
 }
 
 glm::dvec3 MaterialParameter::value(const isect &is) const {
