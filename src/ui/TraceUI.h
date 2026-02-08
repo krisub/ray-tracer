@@ -52,6 +52,10 @@ public:
   bool internalReflection() const { return m_internalReflection; }
   bool backfaceSpecular() const { return m_backfaceSpecular; }
 
+  // added by me:
+  bool getTotalInternalReflection() const { return m_totalInternalReflection; }
+  bool getHandleOverlap() const { return m_handleOverlap; }
+
   // ray counter
   static void addRays(int number, int ctr) {
     if (ctr >= 0)
@@ -109,7 +113,7 @@ protected:
   // for individual rays.  Disabled by default for efficiency
   // reasons.
   bool m_displayDebuggingInfo = false;
-  bool m_antiAlias = true;    // Is antialiasing on?
+  bool m_antiAlias = true;     // Is antialiasing on?
   bool m_kdTree = true;        // use kd-tree?
   bool m_shadows = true;       // compute shadows?
   bool m_smoothshade = true;   // turn on/off smoothshading?
@@ -119,6 +123,11 @@ protected:
       true; // Enable reflection inside a translucent object.
   bool m_backfaceSpecular = false; // Enable specular component even seeing
                                    // through the back of a translucent object.
+
+  // added by me
+  bool m_totalInternalReflection = false;
+  bool m_antialiasingAdvanced = false;
+  bool m_handleOverlap = false;
 
   std::unique_ptr<CubeMap> cubemap;
 

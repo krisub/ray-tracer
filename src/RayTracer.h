@@ -14,6 +14,7 @@
 #include <time.h>
 
 class Scene;
+class Material;
 class Pixel {
 public:
   Pixel(int i, int j, unsigned char *ptr) : ix(i), jy(j), value(ptr) {}
@@ -40,6 +41,7 @@ public:
 
   void traceImage(int w, int h);
   int aaImage();
+  int aaAdvancedImage();
   bool checkRender();
   void waitRender();
 
@@ -57,6 +59,23 @@ public:
 
 private:
   glm::dvec3 trace(double x, double y);
+  glm::dvec3 computeReflectionDirection(const glm::dvec3 &incidentDir,
+                                        const glm::dvec3 &surfaceNormal);
+  glm::dvec3 computeRefractionDirection(const glm::dvec3 &incidentDir,
+                                        const glm::dvec3 &surfaceNormal,
+                                        double iorRatio);
+  void accumulateReflection(ray &r, const isect &i, const glm::dvec3 &Kr,
+                            const glm::dvec3 &thresh, int depth,
+                            glm::dvec3 &colorC);
+  void accumulateRefraction(ray &r, const isect &i, const Material &m,
+                            const glm::dvec3 &Kt, const glm::dvec3 &thresh,
+                            int depth, glm::dvec3 &colorC);
+  glm::dvec3 backgroundColor() const;
+
+  glm::dvec3 aaARecurse(double x, double y, double w, double h, int depth,
+    int maxDepth, const glm::dvec3 &cTL,
+    const glm::dvec3 &cTR, const glm::dvec3 &cBL,
+    const glm::dvec3 &cBR);
 
   std::unique_ptr<Scene> scene;
   std::vector<unsigned char> buffer;
@@ -69,6 +88,8 @@ private:
   int block_size;
   double aaThresh;
   int samples;
+
+  bool tir;           // total internal reflection
 
 };
 

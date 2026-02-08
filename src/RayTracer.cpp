@@ -30,6 +30,102 @@ extern TraceUI *traceUI;
 // set in the "trace single ray" mode in TraceGLWindow, for example.
 bool debugMode = false;
 
+glm::dvec3 RayTracer::computeReflectionDirection(
+    const glm::dvec3 &incidentDir, const glm::dvec3 &surfaceNormal) {
+  double incidentNormalDot = glm::dot(surfaceNormal, incidentDir);
+  return incidentDir - 2.0 * incidentNormalDot * surfaceNormal;
+}
+
+glm::dvec3 RayTracer::computeRefractionDirection(
+    const glm::dvec3 &incidentDir, const glm::dvec3 &surfaceNormal,
+    double iorRatio) {
+  double cosIncident = glm::dot(surfaceNormal, incidentDir);
+  double sin2Transmitted =
+      iorRatio * iorRatio * (1.0 - cosIncident * cosIncident);
+  if (sin2Transmitted > 1.0) {
+    return glm::dvec3(0.0, 0.0, 0.0);
+  }
+
+  double cosTransmitted = sqrt(1.0 - sin2Transmitted);
+  return iorRatio * incidentDir -
+         (iorRatio * cosIncident + cosTransmitted) * surfaceNormal;
+}
+
+void RayTracer::accumulateReflection(ray &r, const isect &i,
+                                     const glm::dvec3 &Kr,
+                                     const glm::dvec3 &thresh, int depth,
+                                     glm::dvec3 &colorC) {
+  if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
+    glm::dvec3 rayDir = glm::normalize(r.getDirection());
+    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    glm::dvec3 reflectDir =
+        computeReflectionDirection(rayDir, surfaceNormal);
+
+    ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+                     glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+
+    double t_val;
+    colorC += Kr * traceRay(reflectedRay, thresh, depth - 1, t_val);
+  }
+}
+
+void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
+                                     const glm::dvec3 &Kt,
+                                     const glm::dvec3 &thresh, int depth,
+                                     glm::dvec3 &colorC) {
+  if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
+    glm::dvec3 rayDir = glm::normalize(r.getDirection());
+    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    double indexOfRefraction = m.index(i);
+
+    double cosIncidence = glm::dot(surfaceNormal, rayDir);
+    double iorRatio;
+    glm::dvec3 normalForRefraction;
+
+    if (cosIncidence < 0) {
+      iorRatio = 1.0 / indexOfRefraction;
+      normalForRefraction = surfaceNormal;
+    } else {
+      iorRatio = indexOfRefraction / 1.0;
+      normalForRefraction = -surfaceNormal;
+    }
+
+    glm::dvec3 refractionDir =
+        computeRefractionDirection(rayDir, normalForRefraction, iorRatio);
+
+    if (glm::length(refractionDir) > 0.0) {
+      ray refractedRay(r.at(i) + refractionDir * RAY_EPSILON, refractionDir,
+                       glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
+
+      double t_val;
+      glm::dvec3 incomingLight =
+          traceRay(refractedRay, thresh, depth - 1, t_val);
+      if (cosIncidence < 0)
+        incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
+      colorC += incomingLight;
+    } else {
+      // TODO: add flag to enable TIR
+      if (tir) {
+        glm::dvec3 reflectDir =
+            computeReflectionDirection(rayDir, normalForRefraction);
+
+        ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+                        glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+
+        double t_val;
+        glm::dvec3 incomingLight =
+            traceRay(reflectedRay, thresh, depth - 1, t_val);
+        incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
+        colorC += incomingLight;
+      }
+    }
+  }
+}
+
+glm::dvec3 RayTracer::backgroundColor() const {
+  return glm::dvec3(0.0, 0.0, 0.0);
+}
+
 // Trace a top-level ray through pixel(i,j), i.e. normalized window coordinates
 // (x,y), through the projection plane, and out into the scene. All we do is
 // enter the main ray-tracing method, getting things started by plugging in an
@@ -76,50 +172,6 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   pixel[2] = (int)(255.0 * col[2]);
 
   return col;
-
-  // if (i == buffer_width / 2 && j == buffer_height / 2) {
-  //   debugMode = true;
-  //   std::cout << "tracing center pixel (" << i << "," << j << ")" <<
-  //   std::endl;
-  // } else {
-  //   debugMode = false;
-  // }
-
-  // brute force anti aliasing by supersampling
-  // int gridSize = int(sqrt(samples));
-  // if (gridSize < 1)
-  //   gridSize = 1;
-
-  // for (int p = 0; p < gridSize; ++p) {
-  //   for (int q = 0; q < gridSize; ++q) {
-  //     // offset based on grid pos
-  //     double offsetX = (double(p) + 0.5) / double(gridSize);
-  //     double offsetY = (double(q) + 0.5) / double(gridSize);
-  //     // pixel coord + offset normalized
-  //     double x = (double(i) + offsetX) / double(buffer_width);
-  //     double y = (double(j) + offsetY) / double(buffer_height);
-
-  //     col += trace(x, y); // trace subpixel
-  //   }
-  // }
-
-  // col /= double(gridSize * gridSize); // average
-
-  // unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3; // og
-  // code
-
-  // if (debugMode) {
-  //   std::cout << "center pixel result: " << col.x << ", " << col.y << ", "
-  //             << col.z << std::endl;
-  // }
-
-  // col = glm::clamp(col, 0.0, 1.0);
-  // pixel[0] =
-  //     (int)(255.0 * col[0] + 0.5); // og code maybe add +0.5 to round to
-  //     nearest int?
-  // pixel[1] = (int)(255.0 * col[1] + 0.5); // og code
-  // pixel[2] = (int)(255.0 * col[2] + 0.5); // og code
-  // return col;
 }
 
 #define VERBOSE 0
@@ -128,11 +180,8 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 // called from here) to handle reflection, refraction, etc etc.
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
-
-  // const double TEST_EPSILON = 1e-3;
-
   if (depth <= 0) {
-    return glm::dvec3(0.0, 0.0, 0.0); // stop when depth is 0
+    return glm::dvec3(0.0, 0.0, 0.0);
   }
 
   isect i;
@@ -143,97 +192,15 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
   if (scene->intersect(r, i)) {
     t = i.getT();
-    // YOUR CODE HERE
-    // std::cout << "hit object at t=" << i.getT() << std::endl;
-    // An intersection occurred!  We've got work to do. For now, this code gets
-    // the material for the surface that was intersected, and asks that material
-    // to provide a color for the ray.x
-
-    // This is a great place to insert code for recursive ray tracing. Instead
-    // of just returning the result of shade(), add some more steps: add in the
-    // contributions from reflected and refracted rays.
 
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
 
-    // https://www.opengl.org/archives/resources/code/samples/advanced/advanced97/notes/node88.html
-    // reflection: angle of incidence = angle of reflection
-    // incident direction can be decomposed into two components, one parallel to
-    // surface and one perpendicular to surface normal:
-    //  refraction: snell's law
+    glm::dvec3 Kr = m.kr(i);
+    accumulateReflection(r, i, Kr, thresh, depth, colorC);
 
-    // what is atten in ray.h
-    glm::dvec3 Kr = m.kr(i); // reflective component
-    if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
-      glm::dvec3 rayDir = glm::normalize(r.getDirection());
-      glm::dvec3 surfaceNormal = glm::normalize(i.getN());
-      glm::dvec3 reflectDir = glm::reflect(rayDir, surfaceNormal);
-
-      ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
-                       glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
-
-      double t_val;
-      colorC += Kr * traceRay(reflectedRay, thresh, depth - 1, t_val);
-    }
-
-    glm::dvec3 Kt = m.kt(i); // refractive (transmissive) component
-    if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
-      glm::dvec3 rayDir = glm::normalize(r.getDirection());
-      glm::dvec3 surfaceNormal = glm::normalize(i.getN());
-      double indexOfRefraction = m.index(i);
-
-      /*
-      if dot product (cosine of angle of incidence) < 0 we are going into the
-      material (hitting the front) otherwise we are leaving the material
-      (hitting the back)
-      */
-
-      double cosIncidence = glm::dot(surfaceNormal, rayDir);
-      // double cosIncidence = glm::dot(rayDir, surfaceNormal);
-      double iorRatio;
-      glm::dvec3 normalForRefraction;
-
-      // TODO: can we assume that we are always going into/out of air? what
-      // about from material to material?
-      if (cosIncidence < 0) { // air to material
-        iorRatio = 1.0 / indexOfRefraction;
-        normalForRefraction = surfaceNormal;
-      } else { // material to air.
-        iorRatio = indexOfRefraction / 1.0;
-        normalForRefraction = -surfaceNormal;
-      }
-
-      glm::dvec3 refractionDir =
-          glm::refract(rayDir, normalForRefraction, iorRatio);
-
-      if (glm::length(refractionDir) > 0.0) {
-        // std::cout << "refraction at t=" << i.getT() << std::endl;
-        ray refractedRay(r.at(i) + refractionDir * RAY_EPSILON, refractionDir,
-                         glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
-
-        double t_val;
-        glm::dvec3 incomingLight =
-            traceRay(refractedRay, thresh, depth - 1, t_val);
-        if (cosIncidence < 0)
-          incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
-        colorC += incomingLight;
-        // colorC += Kt * traceRay(refractedRay, thresh, depth - 1, t_val);
-      } else { // should reflect back inside?
-        // TODO: add flag to enable this
-        // std::cout << "total internal reflection at t=" << i.getT() <<
-        // std::endl; std::endl;
-        // glm::dvec3 reflectDir = glm::reflect(rayDir, normalForRefraction);
-
-        // ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
-        //                  glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
-
-        // double t_val;
-        // glm::dvec3 incomingLight =
-        //     traceRay(reflectedRay, thresh, depth - 1, t_val);
-        // incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
-        // colorC += incomingLight;
-      }
-    }
+    glm::dvec3 Kt = m.kt(i);
+    accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);
 
   } else {
     t = 0.0;
@@ -247,7 +214,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     // traceUI->getCubeMap();
     //       Check traceUI->cubeMap() to see if cubeMap is loaded
     //       and enabled.
-    colorC = glm::dvec3(0.0, 0.0, 0.0);
+    colorC = backgroundColor();
   }
 #if VERBOSE
   std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
@@ -359,6 +326,8 @@ void RayTracer::traceSetup(int w, int h) {
   thresh = traceUI->getThreshold();
   samples = traceUI->getSuperSamples();
   aaThresh = traceUI->getAaThreshold();
+  tir = traceUI->getTotalInternalReflection();
+  handleOverlap = traceUI->getHandleOverlap();
 
   // YOUR CODE HERE
   // FIXME: Additional initializations
@@ -400,23 +369,6 @@ void RayTracer::traceImage(int w, int h) {
 }
 
 int RayTracer::aaImage() {
-  // YOUR CODE HERE
-  // FIXME: Implement Anti-aliasing here
-  //
-  // TIP: samples and aaThresh have been synchronized with TraceUI by
-  //      RayTracer::traceSetup() function
-
-  /*
-  pixel coordinates (i,j)/(x.y)
-
-  (0, 0) (1, 0) (2, 0) ... (w-1, 0)
-  (0, 1) (1, 1) (2, 1) ... (w-1, 1)
-  ...
-  (0, h-1) (1, h-1) (2, h-1) ... (w-1, h-1)
-
-
-  */
-
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -424,11 +376,8 @@ int RayTracer::aaImage() {
   for (int j = 0; j < buffer_height; ++j) {
     for (int i = 0; i < buffer_width; ++i) {
 
-      // say j = 1, i = 0
-      // and image is 3x3 pixels
-
       glm::dvec3 col(0, 0, 0);
-      int gridSize = samples; // = 3
+      int gridSize = samples;
 
       if (gridSize < 1)
         gridSize = 1;
@@ -436,17 +385,8 @@ int RayTracer::aaImage() {
       for (int p = 0; p < gridSize; ++p) {
         for (int q = 0; q < gridSize; ++q) {
 
-          // at p-q-0
-
-          // offsetX = 0.1666...
-          // offsetY = 0.1666...
           double offsetX = (double(p) + 0.5) / double(gridSize);
           double offsetY = (double(q) + 0.5) / double(gridSize);
-
-          // pixel coord + offset normalized
-          // x = (0 + 0.1666...) / 3 = 0.05555...
-          // y = (1 + 0.1666...) / 3 = 0.38888...
-          // normalizing by image dimensions to pass to trace function
           double x = (double(i) + offsetX) / double(buffer_width);
           double y = (double(j) + offsetY) / double(buffer_height);
 
@@ -457,9 +397,98 @@ int RayTracer::aaImage() {
       col /= double(gridSize * gridSize);
       col = glm::clamp(col, 0.0, 1.0);
 
-      // overwrite pixel in buffer
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      pixel[0] = (int)(255.0 * col[0] + 0.5); // do i need the +0.5
+      pixel[0] = (int)(255.0 * col[0] + 0.5);
+      pixel[1] = (int)(255.0 * col[1] + 0.5);
+      pixel[2] = (int)(255.0 * col[2] + 0.5);
+    }
+  }
+  return 0;
+}
+
+glm::dvec3 RayTracer::aaARecurse(double x, double y, double w, double h,
+                                 int depth, int maxDepth, const glm::dvec3 &cTL,
+                                 const glm::dvec3 &cTR, const glm::dvec3 &cBL,
+                                 const glm::dvec3 &cBR) {
+  double halfW = w * 0.5;
+  double halfH = h * 0.5;
+
+  glm::dvec3 cCenter = trace((x + halfW) / double(buffer_width),
+                             (y + halfH) / double(buffer_height));
+
+  if (depth >= maxDepth) {
+    return (cTL + cTR + cBL + cBR + cCenter) * 0.2;
+  }
+
+
+  double d1 = glm::length(cTL - cCenter);
+  double d2 = glm::length(cTR - cCenter);
+  double d3 = glm::length(cBL - cCenter);
+  double d4 = glm::length(cBR - cCenter);
+
+  if (d1 <= aaThresh && d2 <= aaThresh && d3 <= aaThresh && d4 <= aaThresh) {
+    return (cTL + cTR + cBL + cBR + cCenter) * 0.2;
+  }
+
+  glm::dvec3 cTop =
+      trace((x + halfW) / double(buffer_width), y / double(buffer_height));
+  glm::dvec3 cBottom = trace((x + halfW) / double(buffer_width),
+                             (y + h) / double(buffer_height));
+  glm::dvec3 cLeft =
+      trace(x / double(buffer_width), (y + halfH) / double(buffer_height));
+  glm::dvec3 cRight = trace((x + w) / double(buffer_width),
+                            (y + halfH) / double(buffer_height));
+
+  // top left
+  glm::dvec3 q1 = aaARecurse(x, y, halfW, halfH, depth + 1, maxDepth, cTL, cTop,
+                             cLeft, cCenter);
+  // top right
+  glm::dvec3 q2 = aaARecurse(x + halfW, y, halfW, halfH, depth + 1, maxDepth,
+                             cTop, cTR, cCenter, cRight);
+  // bottom left
+  glm::dvec3 q3 = aaARecurse(x, y + halfH, halfW, halfH, depth + 1, maxDepth,
+                             cLeft, cCenter, cBL, cBottom);
+  // bottom right
+  glm::dvec3 q4 = aaARecurse(x + halfW, y + halfH, halfW, halfH, depth + 1,
+                             maxDepth, cCenter, cRight, cBottom, cBR);
+
+  // average
+  return (q1 + q2 + q3 + q4) * 0.25;
+}
+
+int RayTracer::aaAdvancedImage() {
+  if (threads > 0)
+    omp_set_num_threads(threads);
+
+#pragma omp parallel for schedule(dynamic)
+  for (int j = 0; j < buffer_height; ++j) {
+    for (int i = 0; i < buffer_width; ++i) {
+
+      double x = double(i);
+      double y = double(j);
+      double w = 1.0;
+      double h = 1.0;
+
+      glm::dvec3 cTL =
+          trace(x / double(buffer_width), y / double(buffer_height));
+      glm::dvec3 cTR =
+          trace((x + w) / double(buffer_width), y / double(buffer_height));
+      glm::dvec3 cBL =
+          trace(x / double(buffer_width), (y + h) / double(buffer_height));
+      glm::dvec3 cBR = trace((x + w) / double(buffer_width),
+                             (y + h) / double(buffer_height));
+
+      int maxDepth = (int)std::ceil(std::log2((double)samples));
+      if (maxDepth < 1)
+        maxDepth = 1;
+      if (maxDepth > 5)
+        maxDepth = 5;
+
+      glm::dvec3 col = aaARecurse(x, y, w, h, 0, maxDepth, cTL, cTR, cBL, cBR);
+
+      col = glm::clamp(col, 0.0, 1.0);
+      unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+      pixel[0] = (int)(255.0 * col[0] + 0.5);
       pixel[1] = (int)(255.0 * col[1] + 0.5);
       pixel[2] = (int)(255.0 * col[2] + 0.5);
     }

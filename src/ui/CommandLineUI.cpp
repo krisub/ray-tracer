@@ -10,6 +10,7 @@ extern int getopt(int argc, char **argv, const char *optstring);
 #endif
 
 #include <assert.h>
+#include <getopt.h>
 
 #include "../fileio/images.h"
 #include "CommandLineUI.h"
@@ -25,7 +26,14 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
   progName = argv[0];
   const char *jsonfile = nullptr;
   string cubemap_file;
-  while ((i = getopt(argc, argv, "r:w:j:c:t:n:ah")) != EOF) {
+
+  static struct option long_options[] = {{"aaa", no_argument, nullptr, 1000},
+                                         {"tir", no_argument, nullptr, 1001},
+                                         {"handle-overlap", no_argument, nullptr, 1002},
+                                         {nullptr, 0, nullptr, 0}};
+
+  while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
+                          nullptr)) != -1) {
     switch (i) {
     case 'r':
       m_nDepth = atoi(optarg);
@@ -48,6 +56,15 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
     case 'h':
       usage();
       exit(1);
+    case 1000: // --aaa
+      m_antialiasingAdvanced = true;
+      break;
+    case 1001: // --tir
+      m_totalInternalReflection = true;
+      break;
+    case 1002: // --handle-overlap
+      m_handleOverlap = true;
+      break;
     default:
       // Oops; unknown argument
       std::cerr << "Invalid argument: '" << i << "'." << std::endl;
@@ -86,17 +103,16 @@ int CommandLineUI::run() {
 
     raytracer->traceImage(width, height);
     raytracer->waitRender();
-    if (aaSwitch()) {
-      raytracer->aaImage();
-      raytracer->waitRender();
-      // cout << "aaImage() called" << endl;
-    } else {
-      // cout << "aaImage() not called" << endl;
+    if (aaSwitch()) { // m_antiAlias
+
+      if (m_antialiasingAdvanced) {
+        raytracer->aaAdvancedImage();
+        raytracer->waitRender();
+      } else {
+        raytracer->aaImage();
+        raytracer->waitRender();
+      }
     }
-    // if (m_antiAlias) {
-    //   raytracer->aaImage();
-    //   raytracer->waitRender();
-    // }
 
     end = clock();
 
