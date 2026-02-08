@@ -123,6 +123,9 @@ public:
   virtual glm::dvec3 shadowAttenuation(const ray &r,
                                        const glm::dvec3 &surfaceNormal,
                                        const glm::dvec3 &pos) const;
+  virtual glm::dvec3 shadowAttenuationOverlap(const ray &r,
+                                              const glm::dvec3 &surfaceNormal,
+                                              const glm::dvec3 &pos) const;
 
   /** @brief directional lights do not decay with distance. always 1.0. */
   virtual double distanceAttenuation(const glm::dvec3 &P) const;
@@ -179,6 +182,9 @@ public:
   virtual glm::dvec3 shadowAttenuation(const ray &r,
                                        const glm::dvec3 &surfaceNormal,
                                        const glm::dvec3 &pos) const;
+  virtual glm::dvec3 shadowAttenuationOverlap(const ray &r,
+                                              const glm::dvec3 &surfaceNormal,
+                                              const glm::dvec3 &pos) const;
   /**
    * @brief calculates attentuation with the formula:
    * f(d) = min( 1, 1/( a + b d + c d^2 ) ) where d is the distance to the

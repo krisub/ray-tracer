@@ -11,10 +11,12 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <vector>
 #include <time.h>
 
 class Scene;
 class Material;
+class SceneObject;
 class Pixel {
 public:
   Pixel(int i, int j, unsigned char *ptr) : ix(i), jy(j), value(ptr) {}
@@ -70,6 +72,25 @@ private:
   void accumulateRefraction(ray &r, const isect &i, const Material &m,
                             const glm::dvec3 &Kt, const glm::dvec3 &thresh,
                             int depth, glm::dvec3 &colorC);
+  glm::dvec3 traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
+                             double &t,
+                             const std::vector<const SceneObject *> &objStack);
+  void accumulateReflectionOverlap(ray &r, const isect &i,
+                                   const glm::dvec3 &Kr,
+                                   const glm::dvec3 &thresh, int depth,
+                                   glm::dvec3 &colorC,
+                                   const std::vector<const SceneObject *> &objStack);
+  void accumulateRefractionOverlap(ray &r, const isect &i, const Material &m,
+                                   const glm::dvec3 &Kt,
+                                   const glm::dvec3 &thresh, int depth,
+                                   glm::dvec3 &colorC,
+                                   const std::vector<const SceneObject *> &objStack);
+  double averageIorFromObjects(
+      const std::vector<const SceneObject *> &objStack,
+      const isect &i) const;
+  glm::dvec3 averageKtFromObjects(
+      const std::vector<const SceneObject *> &objStack,
+      const isect &i) const;
   glm::dvec3 backgroundColor() const;
 
   glm::dvec3 aaARecurse(double x, double y, double w, double h, int depth,

@@ -6,6 +6,7 @@
 #include "scene/light.h"
 #include "scene/material.h"
 #include "scene/ray.h"
+#include "scene/scene.h"
 #include <omp.h>
 
 #include "parser/JsonParser.h"
@@ -122,6 +123,159 @@ void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
   }
 }
 
+double RayTracer::averageIorFromObjects(
+    const std::vector<const SceneObject *> &objStack,
+    const isect &i) const {
+  if (objStack.empty()) {
+    return 1.0;
+  }
+  double sum = 0.0;
+  for (const auto *obj : objStack) {
+    sum += obj->getMaterial().index(i);
+  }
+  return sum / static_cast<double>(objStack.size());
+}
+
+glm::dvec3 RayTracer::averageKtFromObjects(
+    const std::vector<const SceneObject *> &objStack,
+    const isect &i) const {
+  if (objStack.empty()) {
+    return glm::dvec3(1.0, 1.0, 1.0);
+  }
+  glm::dvec3 sum(0.0, 0.0, 0.0);
+  for (const auto *obj : objStack) {
+    sum += obj->getMaterial().kt(i);
+  }
+  return sum / static_cast<double>(objStack.size());
+}
+
+void RayTracer::accumulateReflectionOverlap(
+    ray &r, const isect &i, const glm::dvec3 &Kr,
+    const glm::dvec3 &thresh, int depth, glm::dvec3 &colorC,
+    const std::vector<const SceneObject *> &objStack) {
+  if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
+    glm::dvec3 rayDir = glm::normalize(r.getDirection());
+    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    glm::dvec3 reflectDir =
+        computeReflectionDirection(rayDir, surfaceNormal);
+
+    ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+                     glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+
+    double t_val;
+    colorC += Kr * traceRayOverlap(reflectedRay, thresh, depth - 1, t_val,
+                                   objStack);
+  }
+}
+
+void RayTracer::accumulateRefractionOverlap(
+    ray &r, const isect &i, const Material &m, const glm::dvec3 &Kt,
+    const glm::dvec3 &thresh, int depth, glm::dvec3 &colorC,
+    const std::vector<const SceneObject *> &objStack) {
+  if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
+    glm::dvec3 rayDir = glm::normalize(r.getDirection());
+    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    std::vector<const SceneObject *> nextObjStack = objStack;
+
+    const SceneObject *hitObject = i.getObject();
+    bool foundInStack = false;
+    int foundIndex = -1;
+    for (int k = static_cast<int>(nextObjStack.size()) - 1; k >= 0; --k) {
+      if (nextObjStack[k] == hitObject) {
+        foundInStack = true;
+        foundIndex = k;
+        break;
+      }
+    }
+
+    glm::dvec3 normalForRefraction;
+    if (!foundInStack) {
+      normalForRefraction = surfaceNormal;
+      nextObjStack.push_back(hitObject);
+    } else {
+      normalForRefraction = -surfaceNormal;
+      if (foundIndex >= 0) {
+        nextObjStack.erase(nextObjStack.begin() + foundIndex);
+      }
+    }
+
+    double n1 = averageIorFromObjects(objStack, i);
+    double n2 = averageIorFromObjects(nextObjStack, i);
+    if (n2 <= 0.0) {
+      n2 = 1.0;
+    }
+    double iorRatio = n1 / n2;
+
+    glm::dvec3 refractionDir =
+        computeRefractionDirection(rayDir, normalForRefraction, iorRatio);
+
+    if (glm::length(refractionDir) > 0.0) {
+      ray refractedRay(r.at(i) + refractionDir * RAY_EPSILON, refractionDir,
+                       glm::dvec3(1.0, 1.0, 1.0), ray::REFRACTION);
+
+      double t_val;
+      glm::dvec3 incomingLight =
+          traceRayOverlap(refractedRay, thresh, depth - 1, t_val,
+                          nextObjStack);
+      glm::dvec3 attenKt = averageKtFromObjects(nextObjStack, i);
+      incomingLight *= glm::pow(attenKt, glm::dvec3(t_val, t_val, t_val));
+      colorC += incomingLight;
+    } else {
+      if (tir) {
+        glm::dvec3 reflectDir =
+            computeReflectionDirection(rayDir, normalForRefraction);
+
+        ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
+                         glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+
+        double t_val;
+        glm::dvec3 incomingLight =
+            traceRayOverlap(reflectedRay, thresh, depth - 1, t_val,
+                            objStack);
+        glm::dvec3 attenKt = averageKtFromObjects(objStack, i);
+        incomingLight *= glm::pow(attenKt, glm::dvec3(t_val, t_val, t_val));
+        colorC += incomingLight;
+      }
+    }
+  }
+}
+
+glm::dvec3 RayTracer::traceRayOverlap(
+    ray &r, const glm::dvec3 &thresh, int depth, double &t,
+    const std::vector<const SceneObject *> &objStack) {
+  if (depth <= 0) {
+    return glm::dvec3(0.0, 0.0, 0.0);
+  }
+
+  isect i;
+  glm::dvec3 colorC;
+#if VERBOSE
+  std::cerr << "== current depth: " << depth << std::endl;
+#endif
+
+  if (scene->intersect(r, i)) {
+    t = i.getT();
+
+    const Material &m = i.getMaterial();
+    colorC = m.shade(scene.get(), r, i);
+
+    glm::dvec3 Kr = m.kr(i);
+    accumulateReflectionOverlap(r, i, Kr, thresh, depth, colorC, objStack);
+
+    glm::dvec3 Kt = m.kt(i);
+    accumulateRefractionOverlap(r, i, m, Kt, thresh, depth, colorC, objStack);
+
+  } else {
+    t = 0.0;
+    colorC = backgroundColor();
+  }
+#if VERBOSE
+  std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
+            << std::endl;
+#endif
+  return colorC;
+}
+
 glm::dvec3 RayTracer::backgroundColor() const {
   return glm::dvec3(0.0, 0.0, 0.0);
 }
@@ -180,6 +334,11 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 // called from here) to handle reflection, refraction, etc etc.
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
+  if (handleOverlap) {
+    std::vector<const SceneObject *> objStack;
+    return traceRayOverlap(r, thresh, depth, t, objStack);
+  }
+
   if (depth <= 0) {
     return glm::dvec3(0.0, 0.0, 0.0);
   }
@@ -196,11 +355,13 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
 
+
     glm::dvec3 Kr = m.kr(i);
     accumulateReflection(r, i, Kr, thresh, depth, colorC);
 
     glm::dvec3 Kt = m.kt(i);
-    accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);
+    accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);  
+    
 
   } else {
     t = 0.0;

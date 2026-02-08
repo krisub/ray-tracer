@@ -23,13 +23,14 @@ python3 raycheck.py # doesn't work because of macos version
 
 TODO (01/31):
 - run sancheck
-- compile binary in release mode for openmp
+- write README
+- compile binary in release mode for openmp DONE
 - add flag for tir  DONE
 - implement better aa and add flag  DONE
 - multiple overlapping transparent objects
 - light source within an object
-- backface culling
-- arbitrary btrfs
+- backface culling DONE
+- arbitrary btrfs?
 - figure out the other ec
 
 p2:

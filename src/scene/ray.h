@@ -209,6 +209,8 @@ public:
    * @param o ptr to the SceneObject (Sphere, Box, TrimeshFace)
    */
   void setObject(const SceneObject *o) { obj = o; }
+  /** @return the geometric object that was hit */
+  const SceneObject *getObject() const { return obj; }
 
   /**
    * @brief set the distance along the ray to the intersection
