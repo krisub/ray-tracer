@@ -133,8 +133,26 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
   double det = glm::dot(ABedge, dCrossAC);
 
   const double EPS = 1e-8;
-  if (fabs(det) < EPS)
-    return false; // ray is parallel. (TODO: or runs along edge? is that valid?)
+  // no bkface culling
+  // if (fabs(det) < EPS)
+  //   return false; // ray is parallel. (TODO: or runs along edge? is that
+  // //   valid?)
+
+  // backface culling
+
+  const Material &mat = parent->getMaterial();
+  // TODO: change when texture mapping
+  bool isTransmissive = (glm::length(mat.kt(isect())) > 1e-6);
+
+  if (traceUI->bkFaceSw() && !isTransmissive) {
+    if (det < EPS) {
+      return false; // ray is parallel or backfacing
+    }
+  } else {
+    if (fabs(det) < EPS) {
+      return false; // ray is parallel, may or may not be backfacing
+    }
+  }
 
   // u, v, t
 

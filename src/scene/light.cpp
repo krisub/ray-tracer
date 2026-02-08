@@ -134,7 +134,6 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
       if (direction > 0) {
         double distance = i.getT();
         lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
-        // lightAtten *= kt;
       }
 
       if (glm::length(lightAtten) < 1e-6) {

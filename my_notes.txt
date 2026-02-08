@@ -24,8 +24,8 @@ python3 raycheck.py # doesn't work because of macos version
 TODO (01/31):
 - run sancheck
 - compile binary in release mode for openmp
-- add flag for tir
-- implement better aa and add flag
+- add flag for tir  DONE
+- implement better aa and add flag  DONE
 - multiple overlapping transparent objects
 - light source within an object
 - backface culling
