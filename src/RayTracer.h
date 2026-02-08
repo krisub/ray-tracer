@@ -90,6 +90,7 @@ private:
   int samples;
 
   bool tir;           // total internal reflection
+  bool handleOverlap; // for multiple overlapping transparent objects
 
 };
 
