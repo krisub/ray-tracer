@@ -30,6 +30,7 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
   static struct option long_options[] = {{"aaa", no_argument, nullptr, 1000},
                                          {"tir", no_argument, nullptr, 1001},
                                          {"handle-overlap", no_argument, nullptr, 1002},
+                                         {"fxaa", no_argument, nullptr, 1003},
                                          {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -57,13 +58,16 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       usage();
       exit(1);
     case 1000: // --aaa
-      m_antialiasingAdvanced = true;
+      m_antialiasingAdaptive = true;
       break;
     case 1001: // --tir
       m_totalInternalReflection = true;
       break;
     case 1002: // --handle-overlap
       m_handleOverlap = true;
+      break;
+    case 1003: // --fxaa
+      m_fxAntialiasing = true;
       break;
     default:
       // Oops; unknown argument
@@ -104,14 +108,16 @@ int CommandLineUI::run() {
     raytracer->traceImage(width, height);
     raytracer->waitRender();
     if (aaSwitch()) { // m_antiAlias
-
-      if (m_antialiasingAdvanced) {
-        raytracer->aaAdvancedImage();
-        raytracer->waitRender();
-      } else {
-        raytracer->aaImage();
-        raytracer->waitRender();
-      }
+        if (m_antialiasingAdaptive) {
+          raytracer->aaAdaptiveImage();
+          raytracer->waitRender();
+        } else if (m_fxAntialiasing) {
+          raytracer->aaFastApproxImage();
+          raytracer->waitRender();
+        } else {
+          raytracer->aaImage();
+          raytracer->waitRender();
+        }
     }
 
     end = clock();

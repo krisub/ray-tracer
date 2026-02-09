@@ -57,7 +57,7 @@ void TraceUI::loadFromJson(const char *file) {
   load(json, "backface_culling", m_backface);
   // added by me
   load(json, "total_internal_reflection", m_totalInternalReflection);
-  load(json, "advanced_antialiasing", m_antialiasingAdvanced);
+  load(json, "adaptive_antialiasing", m_antialiasingAdaptive);
   load(json, "handle_overlap", m_handleOverlap);
   /*
    * Note for Students:

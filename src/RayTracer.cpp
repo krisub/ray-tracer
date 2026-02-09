@@ -630,7 +630,7 @@ glm::dvec3 RayTracer::aaARecurse(double x, double y, double w, double h,
   return (q1 + q2 + q3 + q4) * 0.25;
 }
 
-int RayTracer::aaAdvancedImage() {
+int RayTracer::aaAdaptiveImage() {
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -672,6 +672,100 @@ int RayTracer::aaAdvancedImage() {
       */
     }
   }
+  return 0;
+}
+
+int RayTracer::aaFastApproxImage() {
+  if (threads > 0)
+    omp_set_num_threads(threads);
+
+  const std::vector<unsigned char> srcBuffer = buffer;
+
+  auto fetchColor = [&](int x, int y) -> glm::dvec3 {
+    x = std::max(0, std::min(buffer_width - 1, x));
+    y = std::max(0, std::min(buffer_height - 1, y));
+    const unsigned char *pixel =
+        srcBuffer.data() + (x + y * buffer_width) * 3;
+    return glm::dvec3(pixel[0] / 255.0, pixel[1] / 255.0, pixel[2] / 255.0);
+  };
+
+  auto sampleColor = [&](double x, double y) -> glm::dvec3 {
+    x = std::max(0.0, std::min(x, double(buffer_width - 1)));
+    y = std::max(0.0, std::min(y, double(buffer_height - 1)));
+    int x0 = static_cast<int>(std::floor(x));
+    int y0 = static_cast<int>(std::floor(y));
+    int x1 = std::min(x0 + 1, buffer_width - 1);
+    int y1 = std::min(y0 + 1, buffer_height - 1);
+    double tx = x - double(x0);
+    double ty = y - double(y0);
+
+    glm::dvec3 c00 = fetchColor(x0, y0);
+    glm::dvec3 c10 = fetchColor(x1, y0);
+    glm::dvec3 c01 = fetchColor(x0, y1);
+    glm::dvec3 c11 = fetchColor(x1, y1);
+
+    glm::dvec3 c0 = c00 * (1.0 - tx) + c10 * tx;
+    glm::dvec3 c1 = c01 * (1.0 - tx) + c11 * tx;
+    return c0 * (1.0 - ty) + c1 * ty;
+  };
+
+  // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.601-7-201103-I!!PDF-E.pdf, section 2.5.1
+  auto luminance = [](const glm::dvec3 &c) -> double {
+    return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+  };
+
+  double contrastThreshold = aaThresh;
+  if (contrastThreshold <= 0.0)
+    contrastThreshold = 1.0 / 255.0;
+
+#pragma omp parallel for schedule(dynamic)
+  for (int j = 0; j < buffer_height; ++j) {
+    for (int i = 0; i < buffer_width; ++i) {
+      glm::dvec3 c = fetchColor(i, j);
+
+      glm::dvec3 cN = fetchColor(i, j - 1);
+      glm::dvec3 cS = fetchColor(i, j + 1);
+      glm::dvec3 cE = fetchColor(i + 1, j);
+      glm::dvec3 cW = fetchColor(i - 1, j);
+
+      double lC = luminance(c);
+      double lN = luminance(cN);
+      double lS = luminance(cS);
+      double lE = luminance(cE);
+      double lW = luminance(cW);
+
+      double lumaMin = std::min(lC, std::min(std::min(lN, lS), std::min(lE, lW)));
+      double lumaMax = std::max(lC, std::max(std::max(lN, lS), std::max(lE, lW)));
+      double contrast = lumaMax - lumaMin;
+
+      if (contrast < contrastThreshold) {
+        setPixel(i, j, c);
+        continue;
+      }
+
+      bool edgeHorizontal = std::abs(lN - lS) >= std::abs(lE - lW);
+
+      double stepX = 0.0;
+      double stepY = 0.0;
+      if (edgeHorizontal) {
+        stepY = (lN < lS) ? -1.0 : 1.0;
+      } else {
+        stepX = (lW < lE) ? -1.0 : 1.0;
+      }
+
+      double blend = std::clamp(contrast / (contrast + contrastThreshold), 0.0, 1.0);
+      blend *= 0.5;
+
+      glm::dvec3 shifted =
+          sampleColor(double(i) + stepX * 0.5, double(j) + stepY * 0.5);
+      glm::dvec3 filtered = (c + shifted) * 0.5;
+      glm::dvec3 finalColor = c * (1.0 - blend) + filtered * blend;
+
+      finalColor = glm::clamp(finalColor, 0.0, 1.0);
+      setPixel(i, j, finalColor);
+    }
+  }
+
   return 0;
 }
 

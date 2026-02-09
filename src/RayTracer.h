@@ -43,7 +43,8 @@ public:
 
   void traceImage(int w, int h);
   int aaImage();
-  int aaAdvancedImage();
+  int aaAdaptiveImage();
+  int aaFastApproxImage();
   bool checkRender();
   void waitRender();
 
