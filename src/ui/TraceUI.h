@@ -128,7 +128,8 @@ protected:
 
   // added by me
   bool m_totalInternalReflection = false;
-  bool m_antialiasingAdvanced = false;
+  bool m_antialiasingAdaptive = false;
+  bool m_fxAntialiasing = false;
   bool m_handleOverlap = false;
 
   std::unique_ptr<CubeMap> cubemap;
