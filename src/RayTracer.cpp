@@ -314,8 +314,12 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   // double y = double(j) / double(buffer_height); // og code
 
   // to go to center of pixel
+  double x = (double(i)) / double(buffer_width);  // og code
+  double y = (double(j)) / double(buffer_height); // og code
+  /*
   double x = (double(i) + 0.5) / double(buffer_width);  // og code
   double y = (double(j) + 0.5) / double(buffer_height); // og code
+  */
 
   col = trace(x, y); // og code
   col = glm::clamp(col, 0.0, 1.0);
@@ -546,8 +550,12 @@ int RayTracer::aaImage() {
       for (int p = 0; p < gridSize; ++p) {
         for (int q = 0; q < gridSize; ++q) {
 
+          double offsetX = (double(p)) / double(gridSize);
+          double offsetY = (double(q)) / double(gridSize);
+          /*
           double offsetX = (double(p) + 0.5) / double(gridSize);
           double offsetY = (double(q) + 0.5) / double(gridSize);
+          */
           double x = (double(i) + offsetX) / double(buffer_width);
           double y = (double(j) + offsetY) / double(buffer_height);
 
@@ -559,9 +567,14 @@ int RayTracer::aaImage() {
       col = glm::clamp(col, 0.0, 1.0);
 
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+      pixel[0] = (int)(255.0 * col[0]);
+      pixel[1] = (int)(255.0 * col[1]);
+      pixel[2] = (int)(255.0 * col[2]);
+      /*
       pixel[0] = (int)(255.0 * col[0] + 0.5);
       pixel[1] = (int)(255.0 * col[1] + 0.5);
       pixel[2] = (int)(255.0 * col[2] + 0.5);
+      */
     }
   }
   return 0;
@@ -649,9 +662,14 @@ int RayTracer::aaAdvancedImage() {
 
       col = glm::clamp(col, 0.0, 1.0);
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+      pixel[0] = (int)(255.0 * col[0]);
+      pixel[1] = (int)(255.0 * col[1]);
+      pixel[2] = (int)(255.0 * col[2]);
+      /*
       pixel[0] = (int)(255.0 * col[0] + 0.5);
       pixel[1] = (int)(255.0 * col[1] + 0.5);
       pixel[2] = (int)(255.0 * col[2] + 0.5);
+      */
     }
   }
   return 0;
