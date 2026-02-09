@@ -46,7 +46,8 @@ public:
   bool shadowSw() const { return m_shadows; }
   bool smShadSw() const { return m_smoothshade; }
   bool bkFaceSw() const {
-    return false; // return m_backface;
+    return false;
+    // return m_backface;
   }
   bool cubeMap() const { return m_usingCubeMap && cubemap; }
   CubeMap *getCubeMap() const { return cubemap.get(); }
