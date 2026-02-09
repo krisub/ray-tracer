@@ -432,7 +432,7 @@ def raycheck(args):
     os.makedirs(args.out, exist_ok=True)
     if not check_dirs([scene_dir, args.out]) or (
         args.exec and not check_files([args.exec, args.refbin])
-    ):
+    ):  
         return
 
     cmd_args = ["-r", "5"]
@@ -474,7 +474,8 @@ def raycheck(args):
 
         if args.exec:
             with open(stdoutfn, "w") as stdout, open(stderrfn, "w") as stderr:
-                alist = [args.exec] + cmd_args + [rayfn, imagefn]
+                # alist = [args.exec] + cmd_args + [rayfn, imagefn]
+                alist = [args.exec] + cmd_args + args.custom_args + [rayfn, imagefn]
                 _info("Running command: {}".format(" ".join(alist)))
                 try:
                     start = time.perf_counter()
@@ -729,7 +730,10 @@ def main():
         action="store_true",
         dest="suppress_memo",
     )
-    args = parser.parse_args()
+    
+    # args = parser.parse_args()
+    args, extra_args = parser.parse_known_args()
+    args.custom_args = extra_args
 
     raycheck(args)
 

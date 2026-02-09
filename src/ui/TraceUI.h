@@ -45,7 +45,9 @@ public:
   bool kdSwitch() const { return m_kdTree; }
   bool shadowSw() const { return m_shadows; }
   bool smShadSw() const { return m_smoothshade; }
-  bool bkFaceSw() const { return m_backface; }
+  bool bkFaceSw() const {
+    return false; // return m_backface;
+  }
   bool cubeMap() const { return m_usingCubeMap && cubemap; }
   CubeMap *getCubeMap() const { return cubemap.get(); }
   void setCubeMap(CubeMap *cm);
