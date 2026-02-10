@@ -1,4 +1,4 @@
-I detail my [[#Design Decisions|design decisions]] (specifically where I differ from the reference solution) below, as well as my [[#Extra Credit|extra credit]] work here.
+I detail my [Design Decisions](#general-design-decisions) (specifically where I differ from the reference solution) below, as well as my [#Extra Credit](#extra-credit-design-decisions) work here.
 
 Build instructions (these are the normal build instructions):
 ```bash
@@ -68,7 +68,7 @@ If `depth <= 0`, returns black `(0,0,0)` (recursion limit).
 2. **Return** `colorC`.
 So traceRay is the single place that decides overlap vs non-overlap and then does: intersect → shade → accumulate reflection → accumulate refraction.
 ### Shading:
-`Material::shade` does local Phone (emissive, ambient, diffuse, specular). The base color is just the scene's ambient color combined with the emissive and ambient components of the intersection point. For each light, distance and shadow attenuation and calculated and skipped if effectively zero. They are multipliers on the diffuse and specular term.
+`Material::shade` does local Phong (emissive, ambient, diffuse, specular). The base color is just the scene's ambient color combined with the emissive and ambient components of the intersection point. For each light, distance and shadow attenuation and calculated and skipped if effectively zero. They are multipliers on the diffuse and specular term.
 
 Phong shading is defined for opaque surfaces only. For opaque materials, the diffuse reflection is clamped to be greater than 0 (light only when it's on the same side as the normal), for transmissive materials, I take the absolute value so both sides of the surface are diffuse.
 - Otherwise, when the camera sees the back of the surface (ex. inside a sphere) the normal can point away from the light and zero out the diffuse term.
@@ -84,7 +84,7 @@ I implemented four features for extra credit:
 1. Total internal reflection. My binary enables this with the `--tir` command line flag. (The reference binary will not support the `--tir` flag.) For example:
 	- `./build/bin/ray -r 5 --tir /assets/scenes/trans.json /output/trans.png`
 2. Handling physically overlapping translucent objects. My binary enables this with the `--handle-overlap` command line flag. (The reference binary will not support the `--handle-overlap` flag.) For example:
-	- `./build/bin/ray -r 5 --tir /extra_credit_scenes/overlapping_spheres.json /output/overlapping_spheres.png`
+	- `./build/bin/ray -r 5 --handle-overlap /extra_credit_scenes/concentric_spheres.json /output/concentric_spheres.png`
 3. Adaptive antialiasing. My binary enables this with the `--aaa` command line flag. (The reference binary will not support the `--aaa` flag.) For example:
 	- `./build/bin/ray -r 5 --aaa /assets/scenes/hitchcock.json /output/hitchcock.png`
 4. Fast approximate antialiasing. My binary enables this with the `--fxaa` command line flag. (The reference binary will not support the `--fxaa` flag.) For example:
