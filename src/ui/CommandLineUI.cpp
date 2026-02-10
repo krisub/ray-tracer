@@ -27,11 +27,12 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
   const char *jsonfile = nullptr;
   string cubemap_file;
 
-  static struct option long_options[] = {{"aaa", no_argument, nullptr, 1000},
-                                         {"tir", no_argument, nullptr, 1001},
-                                         {"handle-overlap", no_argument, nullptr, 1002},
-                                         {"fxaa", no_argument, nullptr, 1003},
-                                         {nullptr, 0, nullptr, 0}};
+  static struct option long_options[] = {
+      {"aaa", no_argument, nullptr, 1000},
+      {"tir", no_argument, nullptr, 1001},
+      {"handle-overlap", no_argument, nullptr, 1002},
+      {"fxaa", no_argument, nullptr, 1003},
+      {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
                           nullptr)) != -1) {
@@ -108,16 +109,16 @@ int CommandLineUI::run() {
     raytracer->traceImage(width, height);
     raytracer->waitRender();
     if (aaSwitch()) { // m_antiAlias
-        if (m_antialiasingAdaptive) {
-          raytracer->aaAdaptiveImage();
-          raytracer->waitRender();
-        } else if (m_fxAntialiasing) {
-          raytracer->aaFastApproxImage();
-          raytracer->waitRender();
-        } else {
-          raytracer->aaImage();
-          raytracer->waitRender();
-        }
+      if (m_antialiasingAdaptive) {
+        raytracer->aaAdaptiveImage();
+        raytracer->waitRender();
+      } else if (m_fxAntialiasing) {
+        raytracer->aaFastApproxImage();
+        raytracer->waitRender();
+      } else {
+        raytracer->aaImage();
+        raytracer->waitRender();
+      }
     }
 
     end = clock();
@@ -130,10 +131,12 @@ int CommandLineUI::run() {
     if (buf)
       writeImage(imgName, width, height, buf);
 
-    [[maybe_unused]] double t = (double)(end - start) / CLOCKS_PER_SEC;
-    //		int totalRays = TraceUI::resetCount();
-    //		std::cout << "total time = " << t << " seconds,
-    // rays traced = " << totalRays << std::endl;
+    // [[maybe_unused]]
+    // double t = (double)(end - start) / CLOCKS_PER_SEC;
+    // int totalRays = TraceUI::resetCount();
+    // std::cout << "total time = " << t << " seconds, rays traced = " <<
+    // totalRays << std::endl;
+
     return 0;
   } else {
     std::cerr << "Unable to load ray file '" << rayName << "'" << std::endl;

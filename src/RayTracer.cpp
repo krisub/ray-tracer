@@ -31,15 +31,17 @@ extern TraceUI *traceUI;
 // set in the "trace single ray" mode in TraceGLWindow, for example.
 bool debugMode = false;
 
-glm::dvec3 RayTracer::computeReflectionDirection(
-    const glm::dvec3 &incidentDir, const glm::dvec3 &surfaceNormal) {
+glm::dvec3
+RayTracer::computeReflectionDirection(const glm::dvec3 &incidentDir,
+                                      const glm::dvec3 &surfaceNormal) {
   double incidentNormalDot = glm::dot(surfaceNormal, incidentDir);
   return incidentDir - 2.0 * incidentNormalDot * surfaceNormal;
 }
 
-glm::dvec3 RayTracer::computeRefractionDirection(
-    const glm::dvec3 &incidentDir, const glm::dvec3 &surfaceNormal,
-    double iorRatio) {
+glm::dvec3
+RayTracer::computeRefractionDirection(const glm::dvec3 &incidentDir,
+                                      const glm::dvec3 &surfaceNormal,
+                                      double iorRatio) {
   double cosIncident = glm::dot(surfaceNormal, incidentDir);
   double sin2Transmitted =
       iorRatio * iorRatio * (1.0 - cosIncident * cosIncident);
@@ -59,8 +61,7 @@ void RayTracer::accumulateReflection(ray &r, const isect &i,
   if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
     glm::dvec3 rayDir = glm::normalize(r.getDirection());
     glm::dvec3 surfaceNormal = glm::normalize(i.getN());
-    glm::dvec3 reflectDir =
-        computeReflectionDirection(rayDir, surfaceNormal);
+    glm::dvec3 reflectDir = computeReflectionDirection(rayDir, surfaceNormal);
 
     ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
                      glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
@@ -111,7 +112,7 @@ void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
             computeReflectionDirection(rayDir, normalForRefraction);
 
         ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
-                        glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
+                         glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
 
         double t_val;
         glm::dvec3 incomingLight =
@@ -124,8 +125,7 @@ void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
 }
 
 double RayTracer::averageIorFromObjects(
-    const std::vector<const SceneObject *> &objStack,
-    const isect &i) const {
+    const std::vector<const SceneObject *> &objStack, const isect &i) const {
   if (objStack.empty()) {
     return 1.0;
   }
@@ -137,8 +137,7 @@ double RayTracer::averageIorFromObjects(
 }
 
 glm::dvec3 RayTracer::averageKtFromObjects(
-    const std::vector<const SceneObject *> &objStack,
-    const isect &i) const {
+    const std::vector<const SceneObject *> &objStack, const isect &i) const {
   if (objStack.empty()) {
     return glm::dvec3(1.0, 1.0, 1.0);
   }
@@ -150,21 +149,20 @@ glm::dvec3 RayTracer::averageKtFromObjects(
 }
 
 void RayTracer::accumulateReflectionOverlap(
-    ray &r, const isect &i, const glm::dvec3 &Kr,
-    const glm::dvec3 &thresh, int depth, glm::dvec3 &colorC,
+    ray &r, const isect &i, const glm::dvec3 &Kr, const glm::dvec3 &thresh,
+    int depth, glm::dvec3 &colorC,
     const std::vector<const SceneObject *> &objStack) {
   if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
     glm::dvec3 rayDir = glm::normalize(r.getDirection());
     glm::dvec3 surfaceNormal = glm::normalize(i.getN());
-    glm::dvec3 reflectDir =
-        computeReflectionDirection(rayDir, surfaceNormal);
+    glm::dvec3 reflectDir = computeReflectionDirection(rayDir, surfaceNormal);
 
     ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
                      glm::dvec3(1.0, 1.0, 1.0), ray::REFLECTION);
 
     double t_val;
-    colorC += Kr * traceRayOverlap(reflectedRay, thresh, depth - 1, t_val,
-                                   objStack);
+    colorC +=
+        Kr * traceRayOverlap(reflectedRay, thresh, depth - 1, t_val, objStack);
   }
 }
 
@@ -215,8 +213,7 @@ void RayTracer::accumulateRefractionOverlap(
 
       double t_val;
       glm::dvec3 incomingLight =
-          traceRayOverlap(refractedRay, thresh, depth - 1, t_val,
-                          nextObjStack);
+          traceRayOverlap(refractedRay, thresh, depth - 1, t_val, nextObjStack);
       glm::dvec3 attenKt = averageKtFromObjects(nextObjStack, i);
       incomingLight *= glm::pow(attenKt, glm::dvec3(t_val, t_val, t_val));
       colorC += incomingLight;
@@ -230,8 +227,7 @@ void RayTracer::accumulateRefractionOverlap(
 
         double t_val;
         glm::dvec3 incomingLight =
-            traceRayOverlap(reflectedRay, thresh, depth - 1, t_val,
-                            objStack);
+            traceRayOverlap(reflectedRay, thresh, depth - 1, t_val, objStack);
         glm::dvec3 attenKt = averageKtFromObjects(objStack, i);
         incomingLight *= glm::pow(attenKt, glm::dvec3(t_val, t_val, t_val));
         colorC += incomingLight;
@@ -240,9 +236,10 @@ void RayTracer::accumulateRefractionOverlap(
   }
 }
 
-glm::dvec3 RayTracer::traceRayOverlap(
-    ray &r, const glm::dvec3 &thresh, int depth, double &t,
-    const std::vector<const SceneObject *> &objStack) {
+glm::dvec3
+RayTracer::traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
+                           double &t,
+                           const std::vector<const SceneObject *> &objStack) {
   if (depth <= 0) {
     return glm::dvec3(0.0, 0.0, 0.0);
   }
@@ -359,13 +356,11 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
 
-
     glm::dvec3 Kr = m.kr(i);
     accumulateReflection(r, i, Kr, thresh, depth, colorC);
 
     glm::dvec3 Kt = m.kt(i);
-    accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);  
-    
+    accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);
 
   } else {
     t = 0.0;
@@ -550,12 +545,12 @@ int RayTracer::aaImage() {
       for (int p = 0; p < gridSize; ++p) {
         for (int q = 0; q < gridSize; ++q) {
 
-          double offsetX = (double(p)) / double(gridSize);
-          double offsetY = (double(q)) / double(gridSize);
-          /*
+          // double offsetX = (double(p)) / double(gridSize);
+          // double offsetY = (double(q)) / double(gridSize);
+
           double offsetX = (double(p) + 0.5) / double(gridSize);
           double offsetY = (double(q) + 0.5) / double(gridSize);
-          */
+
           double x = (double(i) + offsetX) / double(buffer_width);
           double y = (double(j) + offsetY) / double(buffer_height);
 
@@ -567,14 +562,13 @@ int RayTracer::aaImage() {
       col = glm::clamp(col, 0.0, 1.0);
 
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      pixel[0] = (int)(255.0 * col[0]);
-      pixel[1] = (int)(255.0 * col[1]);
-      pixel[2] = (int)(255.0 * col[2]);
-      /*
+      // pixel[0] = (int)(255.0 * col[0]);
+      // pixel[1] = (int)(255.0 * col[1]);
+      // pixel[2] = (int)(255.0 * col[2]);
+
       pixel[0] = (int)(255.0 * col[0] + 0.5);
       pixel[1] = (int)(255.0 * col[1] + 0.5);
       pixel[2] = (int)(255.0 * col[2] + 0.5);
-      */
     }
   }
   return 0;
@@ -593,7 +587,6 @@ glm::dvec3 RayTracer::aaARecurse(double x, double y, double w, double h,
   if (depth >= maxDepth) {
     return (cTL + cTR + cBL + cBR + cCenter) * 0.2;
   }
-
 
   double d1 = glm::length(cTL - cCenter);
   double d2 = glm::length(cTR - cCenter);
@@ -662,14 +655,13 @@ int RayTracer::aaAdaptiveImage() {
 
       col = glm::clamp(col, 0.0, 1.0);
       unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      pixel[0] = (int)(255.0 * col[0]);
-      pixel[1] = (int)(255.0 * col[1]);
-      pixel[2] = (int)(255.0 * col[2]);
-      /*
+      // pixel[0] = (int)(255.0 * col[0]);
+      // pixel[1] = (int)(255.0 * col[1]);
+      // pixel[2] = (int)(255.0 * col[2]);
+
       pixel[0] = (int)(255.0 * col[0] + 0.5);
       pixel[1] = (int)(255.0 * col[1] + 0.5);
       pixel[2] = (int)(255.0 * col[2] + 0.5);
-      */
     }
   }
   return 0;
@@ -684,8 +676,7 @@ int RayTracer::aaFastApproxImage() {
   auto fetchColor = [&](int x, int y) -> glm::dvec3 {
     x = std::max(0, std::min(buffer_width - 1, x));
     y = std::max(0, std::min(buffer_height - 1, y));
-    const unsigned char *pixel =
-        srcBuffer.data() + (x + y * buffer_width) * 3;
+    const unsigned char *pixel = srcBuffer.data() + (x + y * buffer_width) * 3;
     return glm::dvec3(pixel[0] / 255.0, pixel[1] / 255.0, pixel[2] / 255.0);
   };
 
@@ -709,14 +700,15 @@ int RayTracer::aaFastApproxImage() {
     return c0 * (1.0 - ty) + c1 * ty;
   };
 
-  // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.601-7-201103-I!!PDF-E.pdf, section 2.5.1
+  // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.601-7-201103-I!!PDF-E.pdf,
+  // section 2.5.1
   auto luminance = [](const glm::dvec3 &c) -> double {
     return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
   };
 
-  double contrastThreshold = aaThresh;
-  if (contrastThreshold <= 0.0)
-    contrastThreshold = 1.0 / 255.0;
+  double contrastThreshold = 1.0 / 255.0;
+  if (aaThresh > 0.0)
+    contrastThreshold = std::min(contrastThreshold, aaThresh);
 
 #pragma omp parallel for schedule(dynamic)
   for (int j = 0; j < buffer_height; ++j) {
@@ -734,8 +726,10 @@ int RayTracer::aaFastApproxImage() {
       double lE = luminance(cE);
       double lW = luminance(cW);
 
-      double lumaMin = std::min(lC, std::min(std::min(lN, lS), std::min(lE, lW)));
-      double lumaMax = std::max(lC, std::max(std::max(lN, lS), std::max(lE, lW)));
+      double lumaMin =
+          std::min(lC, std::min(std::min(lN, lS), std::min(lE, lW)));
+      double lumaMax =
+          std::max(lC, std::max(std::max(lN, lS), std::max(lE, lW)));
       double contrast = lumaMax - lumaMin;
 
       if (contrast < contrastThreshold) {
@@ -743,22 +737,10 @@ int RayTracer::aaFastApproxImage() {
         continue;
       }
 
-      bool edgeHorizontal = std::abs(lN - lS) >= std::abs(lE - lW);
-
-      double stepX = 0.0;
-      double stepY = 0.0;
-      if (edgeHorizontal) {
-        stepY = (lN < lS) ? -1.0 : 1.0;
-      } else {
-        stepX = (lW < lE) ? -1.0 : 1.0;
-      }
-
-      double blend = std::clamp(contrast / (contrast + contrastThreshold), 0.0, 1.0);
-      blend *= 0.5;
-
-      glm::dvec3 shifted =
-          sampleColor(double(i) + stepX * 0.5, double(j) + stepY * 0.5);
-      glm::dvec3 filtered = (c + shifted) * 0.5;
+      glm::dvec3 filtered = (c + cN + cS + cE + cW) * 0.2;
+      double blend =
+          std::clamp(contrast / (contrast + contrastThreshold), 0.0, 1.0);
+      blend *= 0.9;
       glm::dvec3 finalColor = c * (1.0 - blend) + filtered * blend;
 
       finalColor = glm::clamp(finalColor, 0.0, 1.0);

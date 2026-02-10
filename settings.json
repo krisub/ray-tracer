@@ -1,4 +1,3 @@
 {
-  "anti_alias": true,
-  "backface_culling": false
+  "anti_alias": false
 }

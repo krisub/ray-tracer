@@ -1,0 +1,67 @@
+[
+  {
+    "camera": {
+      "position": [0.0, 5.0, 10.0],
+      "viewdir": [0.0, -0.3, -1.0],
+      "updir": [0.0, 1.0, 0.0],
+      "fov": 45.0
+    }
+  },
+  {
+    "point_light": {
+      "position": [0.0, 10.0, 5.0],
+      "color": [1.0, 1.0, 1.0],
+      "constant_attenuation_coeff": 0.15, 
+      "linear_attenuation_coeff": 0.0,
+      "quadratic_attenuation_coeff": 0.0
+    }
+  },
+  {
+    "tri_mesh": {
+      "gennormals": true,
+      "points": [ [-10, 0, 10], [10, 0, 10], [10, 0, -10], [-10, 0, -10] ],
+      "faces": [ [0, 1, 2], [0, 2, 3] ],
+      "material": {
+        "diffuse": { "constant": [1.0, 1.0, 1.0] },
+        "specular": { "constant": [0.0, 0.0, 0.0] },
+        "ambient": { "constant": [0.0, 0.0, 0.0] }
+      }
+    }
+  },
+  {
+    "translate": [
+      [-0.6, 1.5, 0.0],
+      [
+        {
+          "sphere": {
+            "material": {
+              "diffuse": { "constant": [0.0, 0.0, 0.0] },
+              "specular": { "constant": [0.2, 0.2, 0.2] },
+              "transmissive": { "constant": [0.9, 0.1, 0.1] },
+              "index": 1.0,
+              "shininess": 30.0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "translate": [
+      [0.6, 1.5, 0.0],
+      [
+        {
+          "sphere": {
+            "material": {
+              "diffuse": { "constant": [0.0, 0.0, 0.0] },
+              "specular": { "constant": [0.2, 0.2, 0.2] },
+              "transmissive": { "constant": [0.1, 0.1, 0.9] },
+              "index": 1.0,
+              "shininess": 30.0
+            }
+          }
+        }
+      ]
+    ]
+  }
+]
