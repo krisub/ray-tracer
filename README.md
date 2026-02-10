@@ -82,13 +82,13 @@ I use the barycentric method explained in class.
 ### Overview:
 I implemented four features for extra credit:
 1. Total internal reflection. My binary enables this with the `--tir` command line flag. (The reference binary will not support the `--tir` flag.) For example:
-	- `./build/bin/ray -r 5 --tir /assets/scenes/trans.json /output/trans.png`
+	- `./build/bin/ray -r 5 --tir ./extra_credit_scenes/trans.json ./extra_credit_output/trans.png`
 2. Handling physically overlapping translucent objects. My binary enables this with the `--handle-overlap` command line flag. (The reference binary will not support the `--handle-overlap` flag.) For example:
-	- `./build/bin/ray -r 5 --handle-overlap /extra_credit_scenes/concentric_spheres.json /output/concentric_spheres.png`
+	- `./build/bin/ray -r 5 --handle-overlap ./extra_credit_scenes/concentric_spheres.json ./extra_credit_output/concentric_spheres.png`
 3. Adaptive antialiasing. My binary enables this with the `--aaa` command line flag. (The reference binary will not support the `--aaa` flag.) For example:
-	- `./build/bin/ray -r 5 --aaa /assets/scenes/hitchcock.json /output/hitchcock.png`
+	- `./build/bin/ray -r 5 --aaa ./extra_credit_scenes/hitchcock.json ./extra_credit_output/hitchcock.png`
 4. Fast approximate antialiasing. My binary enables this with the `--fxaa` command line flag. (The reference binary will not support the `--fxaa` flag.) For example:
-	- `./build/bin/ray -r 5 --fxaa /assets/scenes/hitchcock.json /output/hitchcock.png`
+	- `./build/bin/ray -r 5 --fxaa ./extra_credit_scenes/hitchcock.json ./extra_credit_output/hitchcock.png`
 ### Total Internal Reflection:
 Snell's law: $n_{1}\sin(\theta_{1})=n_{2}\sin(\theta_{2}))$
 Total internal reflection occurs when we go from a denser to less desnse material, and for a large enough incidence angle, we get that $\sin(\theta_{2})>1$ which is impossible. There is no real refracted ray, the interface reflects all the light. So TIR occurs only when the ray is leaving the denser medium (ex. inside glass, hitting the glass-air boundary) and the angle of incidence is above the critical angle: $\theta_{c}=\arcsin\left( \frac{n_{2}}{n_{1}} \right)$.
