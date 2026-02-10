@@ -8,6 +8,9 @@ mkdir ray
 # Copy important things into it.
 cp -r src ray
 cp -r cmake ray
+cp -r extra_credit_mtgs ray
+cp -r extra_credit_output ray
+cp -r extra_credit_scenes ray
 cp README.md ray
 cp CMakeLists.txt ray
 
