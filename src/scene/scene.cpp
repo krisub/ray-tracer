@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include "../ui/TraceUI.h"
+#include "bvh.h"
 #include "kdTree.h"
 #include "light.h"
 #include "scene.h"
@@ -9,6 +10,17 @@
 #include <iostream>
 
 using namespace std;
+extern TraceUI *traceUI;
+
+namespace {
+bool hasValidBounds(const BoundingBox &bounds) {
+  const glm::dvec3 min = bounds.getMin();
+  const glm::dvec3 max = bounds.getMax();
+  return std::isfinite(min.x) && std::isfinite(min.y) && std::isfinite(min.z) &&
+         std::isfinite(max.x) && std::isfinite(max.y) && std::isfinite(max.z) &&
+         (min.x <= max.x) && (min.y <= max.y) && (min.z <= max.z);
+}
+} // namespace
 
 bool Geometry::intersect(ray &r, isect &i) const {
   double tmin, tmax;
@@ -91,7 +103,9 @@ void Geometry::ComputeBoundingBox() {
   bounds.setMin(glm::dvec3(newMin));
 }
 
-Scene::Scene() { ambientIntensity = glm::dvec3(0, 0, 0); }
+Scene::Scene() : kdtree(nullptr), bvhDirty(true) {
+  ambientIntensity = glm::dvec3(0, 0, 0);
+}
 
 Scene::~Scene() {
   for (auto &obj : objects)
@@ -102,20 +116,68 @@ Scene::~Scene() {
 
 void Scene::add(Geometry *obj) {
   obj->ComputeBoundingBox();
-  sceneBounds.merge(obj->getBoundingBox());
+  const bool useInBvh =
+      obj->hasBoundingBoxCapability() && hasValidBounds(obj->getBoundingBox());
+  if (useInBvh) {
+    sceneBounds.merge(obj->getBoundingBox());
+    bvhObjects.emplace_back(obj);
+  } else {
+    nonBvhObjects.emplace_back(obj);
+  }
   objects.emplace_back(obj);
+  bvhDirty = true;
 }
 
 void Scene::add(Light *light) { lights.emplace_back(light); }
 
 
+void Scene::rebuildBvhIfNeeded() const {
+  if (!bvhDirty) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> guard(bvhBuildMutex);
+  if (!bvhDirty) {
+    return;
+  }
+
+  if (!bvh) {
+    bvh = std::make_unique<Bvh>();
+  }
+  bvh->build(bvhObjects);
+  bvhDirty = false;
+}
+
 // Get any intersection with an object.  Return information about the
 // intersection through the reference parameter.
 bool Scene::intersect(ray &r, isect &i) const {
-  double tmin = 0.0;
-  double tmax = 0.0;
+  if (traceUI && !traceUI->kdSwitch()) {
+    bool have_one = false;
+    for (const auto &obj : objects) {
+      isect cur;
+      if (obj->intersect(r, cur)) {
+        if (!have_one || (cur.getT() < i.getT())) {
+          i = cur;
+          have_one = true;
+        }
+      }
+    }
+    if (!have_one)
+      i.setT(1000.0);
+    if (TraceUI::m_debug) {
+      addToIntersectCache(std::make_pair(new ray(r), new isect(i)));
+    }
+    return have_one;
+  }
+
+  rebuildBvhIfNeeded();
+
   bool have_one = false;
-  for (const auto &obj : objects) {
+  if (bvh) {
+    have_one = bvh->intersect(r, i);
+  }
+
+  for (const auto &obj : nonBvhObjects) {
     isect cur;
     if (obj->intersect(r, cur)) {
       if (!have_one || (cur.getT() < i.getT())) {

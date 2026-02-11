@@ -32,6 +32,7 @@ using std::unique_ptr;
 
 class Light;
 class Scene;
+class Bvh;
 
 template <typename Obj> class KdTree;
 
@@ -212,6 +213,8 @@ private:
       functions in <algorithms> like find() or count()
   */
   std::vector<Geometry *> objects;
+  std::vector<Geometry *> bvhObjects;
+  std::vector<Geometry *> nonBvhObjects;
   std::vector<Light *> lights;
   Camera camera;
 
@@ -228,6 +231,10 @@ private:
   BoundingBox sceneBounds;
 
   KdTree<Geometry> *kdtree;
+  mutable std::unique_ptr<Bvh> bvh;
+  mutable bool bvhDirty;
+  mutable std::mutex bvhBuildMutex;
+  void rebuildBvhIfNeeded() const;
 
   mutable std::mutex intersectionCacheMutex;
 

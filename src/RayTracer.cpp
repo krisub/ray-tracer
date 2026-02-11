@@ -264,7 +264,11 @@ RayTracer::traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
 
   } else {
     t = 0.0;
-    colorC = backgroundColor();
+    if (traceUI && traceUI->cubeMap()) {
+      colorC = traceUI->getCubeMap()->getColor(r);
+    } else {
+      colorC = backgroundColor();
+    }
   }
 #if VERBOSE
   std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
@@ -313,10 +317,10 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   // to go to center of pixel
   double x = (double(i)) / double(buffer_width);  // og code
   double y = (double(j)) / double(buffer_height); // og code
-  /*
-  double x = (double(i) + 0.5) / double(buffer_width);  // og code
-  double y = (double(j) + 0.5) / double(buffer_height); // og code
-  */
+  
+  // double x = (double(i) + 0.5) / double(buffer_width);  // og code
+  // double y = (double(j) + 0.5) / double(buffer_height); // og code
+  
 
   col = trace(x, y); // og code
   col = glm::clamp(col, 0.0, 1.0);
@@ -369,12 +373,11 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     // it according to the background color, which in this (simple)
     // case is just black.
     //
-    // FIXME: Add CubeMap support here.
-    // TIPS: CubeMap object can be fetched from
-    // traceUI->getCubeMap();
-    //       Check traceUI->cubeMap() to see if cubeMap is loaded
-    //       and enabled.
-    colorC = backgroundColor();
+    if (traceUI && traceUI->cubeMap()) {
+      colorC = traceUI->getCubeMap()->getColor(r);
+    } else {
+      colorC = backgroundColor();
+    }
   }
 #if VERBOSE
   std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
@@ -467,6 +470,9 @@ bool RayTracer::loadScene(const char *fn) {
 }
 
 void RayTracer::traceSetup(int w, int h) {
+  // Always start a new render in the "not stopped" state.
+  stopTrace.store(false, std::memory_order_release);
+
   size_t newBufferSize = w * h * 3;
   if (newBufferSize != buffer.size()) {
     bufferSize = newBufferSize;
@@ -520,10 +526,28 @@ void RayTracer::traceImage(int w, int h) {
   //       An asynchronous traceImage lets the GUI update your results
   //       while rendering.
 
-#pragma omp parallel for schedule(dynamic)
-  for (int j = 0; j < h; ++j) {
-    for (int i = 0; i < w; ++i) {
-      tracePixel(i, j);
+  const int tileSize = std::max(1, block_size);
+  const int tilesX = (w + tileSize - 1) / tileSize;
+  const int tilesY = (h + tileSize - 1) / tileSize;
+
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+  for (int ty = 0; ty < tilesY; ++ty) {
+    for (int tx = 0; tx < tilesX; ++tx) {
+      if (stopTrace.load(std::memory_order_acquire))
+        continue;
+
+      const int x0 = tx * tileSize;
+      const int y0 = ty * tileSize;
+      const int x1 = std::min(x0 + tileSize, w);
+      const int y1 = std::min(y0 + tileSize, h);
+
+      for (int j = y0; j < y1; ++j) {
+        if (stopTrace.load(std::memory_order_acquire))
+          break;
+        for (int i = x0; i < x1; ++i) {
+          tracePixel(i, j);
+        }
+      }
     }
   }
 }
@@ -532,43 +556,60 @@ int RayTracer::aaImage() {
   if (threads > 0)
     omp_set_num_threads(threads);
 
-#pragma omp parallel for schedule(dynamic)
-  for (int j = 0; j < buffer_height; ++j) {
-    for (int i = 0; i < buffer_width; ++i) {
+  const int tileSize = std::max(1, block_size);
+  const int tilesX = (buffer_width + tileSize - 1) / tileSize;
+  const int tilesY = (buffer_height + tileSize - 1) / tileSize;
 
-      glm::dvec3 col(0, 0, 0);
-      int gridSize = samples;
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+  for (int ty = 0; ty < tilesY; ++ty) {
+    for (int tx = 0; tx < tilesX; ++tx) {
+      if (stopTrace.load(std::memory_order_acquire))
+        continue;
 
-      if (gridSize < 1)
-        gridSize = 1;
+      const int x0 = tx * tileSize;
+      const int y0 = ty * tileSize;
+      const int x1 = std::min(x0 + tileSize, buffer_width);
+      const int y1 = std::min(y0 + tileSize, buffer_height);
 
-      for (int p = 0; p < gridSize; ++p) {
-        for (int q = 0; q < gridSize; ++q) {
+      for (int j = y0; j < y1; ++j) {
+        if (stopTrace.load(std::memory_order_acquire))
+          break;
+        for (int i = x0; i < x1; ++i) {
+          glm::dvec3 col(0, 0, 0);
+          int gridSize = samples;
 
-          // double offsetX = (double(p)) / double(gridSize);
-          // double offsetY = (double(q)) / double(gridSize);
+          if (gridSize < 1)
+            gridSize = 1;
 
-          double offsetX = (double(p) + 0.5) / double(gridSize);
-          double offsetY = (double(q) + 0.5) / double(gridSize);
+          for (int p = 0; p < gridSize; ++p) {
+            for (int q = 0; q < gridSize; ++q) {
+              double offsetX = (double(p)) / double(gridSize);
+              double offsetY = (double(q)) / double(gridSize);
+              /*
+              double offsetX = (double(p) + 0.5) / double(gridSize);
+              double offsetY = (double(q) + 0.5) / double(gridSize);
+              */
+              double x = (double(i) + offsetX) / double(buffer_width);
+              double y = (double(j) + offsetY) / double(buffer_height);
 
-          double x = (double(i) + offsetX) / double(buffer_width);
-          double y = (double(j) + offsetY) / double(buffer_height);
+              col += trace(x, y);
+            }
+          }
 
-          col += trace(x, y);
+          col /= double(gridSize * gridSize);
+          col = glm::clamp(col, 0.0, 1.0);
+
+          unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+          pixel[0] = (int)(255.0 * col[0]);
+          pixel[1] = (int)(255.0 * col[1]);
+          pixel[2] = (int)(255.0 * col[2]);
+          /*
+          pixel[0] = (int)(255.0 * col[0] + 0.5);
+          pixel[1] = (int)(255.0 * col[1] + 0.5);
+          pixel[2] = (int)(255.0 * col[2] + 0.5);
+          */
         }
       }
-
-      col /= double(gridSize * gridSize);
-      col = glm::clamp(col, 0.0, 1.0);
-
-      unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      // pixel[0] = (int)(255.0 * col[0]);
-      // pixel[1] = (int)(255.0 * col[1]);
-      // pixel[2] = (int)(255.0 * col[2]);
-
-      pixel[0] = (int)(255.0 * col[0] + 0.5);
-      pixel[1] = (int)(255.0 * col[1] + 0.5);
-      pixel[2] = (int)(255.0 * col[2] + 0.5);
     }
   }
   return 0;
@@ -627,41 +668,60 @@ int RayTracer::aaAdaptiveImage() {
   if (threads > 0)
     omp_set_num_threads(threads);
 
-#pragma omp parallel for schedule(dynamic)
-  for (int j = 0; j < buffer_height; ++j) {
-    for (int i = 0; i < buffer_width; ++i) {
+  const int tileSize = std::max(1, block_size);
+  const int tilesX = (buffer_width + tileSize - 1) / tileSize;
+  const int tilesY = (buffer_height + tileSize - 1) / tileSize;
 
-      double x = double(i);
-      double y = double(j);
-      double w = 1.0;
-      double h = 1.0;
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+  for (int ty = 0; ty < tilesY; ++ty) {
+    for (int tx = 0; tx < tilesX; ++tx) {
+      if (stopTrace.load(std::memory_order_acquire))
+        continue;
 
-      glm::dvec3 cTL =
-          trace(x / double(buffer_width), y / double(buffer_height));
-      glm::dvec3 cTR =
-          trace((x + w) / double(buffer_width), y / double(buffer_height));
-      glm::dvec3 cBL =
-          trace(x / double(buffer_width), (y + h) / double(buffer_height));
-      glm::dvec3 cBR = trace((x + w) / double(buffer_width),
-                             (y + h) / double(buffer_height));
+      const int x0 = tx * tileSize;
+      const int y0 = ty * tileSize;
+      const int x1 = std::min(x0 + tileSize, buffer_width);
+      const int y1 = std::min(y0 + tileSize, buffer_height);
 
-      int maxDepth = (int)std::ceil(std::log2((double)samples));
-      if (maxDepth < 1)
-        maxDepth = 1;
-      if (maxDepth > 5)
-        maxDepth = 5;
+      for (int j = y0; j < y1; ++j) {
+        if (stopTrace.load(std::memory_order_acquire))
+          break;
+        for (int i = x0; i < x1; ++i) {
+          double x = double(i);
+          double y = double(j);
+          double w = 1.0;
+          double h = 1.0;
 
-      glm::dvec3 col = aaARecurse(x, y, w, h, 0, maxDepth, cTL, cTR, cBL, cBR);
+          glm::dvec3 cTL =
+              trace(x / double(buffer_width), y / double(buffer_height));
+          glm::dvec3 cTR =
+              trace((x + w) / double(buffer_width), y / double(buffer_height));
+          glm::dvec3 cBL =
+              trace(x / double(buffer_width), (y + h) / double(buffer_height));
+          glm::dvec3 cBR = trace((x + w) / double(buffer_width),
+                                 (y + h) / double(buffer_height));
 
-      col = glm::clamp(col, 0.0, 1.0);
-      unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-      // pixel[0] = (int)(255.0 * col[0]);
-      // pixel[1] = (int)(255.0 * col[1]);
-      // pixel[2] = (int)(255.0 * col[2]);
+          int maxDepth = (int)std::ceil(std::log2((double)samples));
+          if (maxDepth < 1)
+            maxDepth = 1;
+          if (maxDepth > 5)
+            maxDepth = 5;
 
-      pixel[0] = (int)(255.0 * col[0] + 0.5);
-      pixel[1] = (int)(255.0 * col[1] + 0.5);
-      pixel[2] = (int)(255.0 * col[2] + 0.5);
+          glm::dvec3 col =
+              aaARecurse(x, y, w, h, 0, maxDepth, cTL, cTR, cBL, cBR);
+
+          col = glm::clamp(col, 0.0, 1.0);
+          unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+          pixel[0] = (int)(255.0 * col[0]);
+          pixel[1] = (int)(255.0 * col[1]);
+          pixel[2] = (int)(255.0 * col[2]);
+          /*
+          pixel[0] = (int)(255.0 * col[0] + 0.5);
+          pixel[1] = (int)(255.0 * col[1] + 0.5);
+          pixel[2] = (int)(255.0 * col[2] + 0.5);
+          */
+        }
+      }
     }
   }
   return 0;
@@ -710,41 +770,59 @@ int RayTracer::aaFastApproxImage() {
   if (aaThresh > 0.0)
     contrastThreshold = std::min(contrastThreshold, aaThresh);
 
-#pragma omp parallel for schedule(dynamic)
-  for (int j = 0; j < buffer_height; ++j) {
-    for (int i = 0; i < buffer_width; ++i) {
-      glm::dvec3 c = fetchColor(i, j);
+  const int tileSize = std::max(1, block_size);
+  const int tilesX = (buffer_width + tileSize - 1) / tileSize;
+  const int tilesY = (buffer_height + tileSize - 1) / tileSize;
 
-      glm::dvec3 cN = fetchColor(i, j - 1);
-      glm::dvec3 cS = fetchColor(i, j + 1);
-      glm::dvec3 cE = fetchColor(i + 1, j);
-      glm::dvec3 cW = fetchColor(i - 1, j);
-
-      double lC = luminance(c);
-      double lN = luminance(cN);
-      double lS = luminance(cS);
-      double lE = luminance(cE);
-      double lW = luminance(cW);
-
-      double lumaMin =
-          std::min(lC, std::min(std::min(lN, lS), std::min(lE, lW)));
-      double lumaMax =
-          std::max(lC, std::max(std::max(lN, lS), std::max(lE, lW)));
-      double contrast = lumaMax - lumaMin;
-
-      if (contrast < contrastThreshold) {
-        setPixel(i, j, c);
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+  for (int ty = 0; ty < tilesY; ++ty) {
+    for (int tx = 0; tx < tilesX; ++tx) {
+      if (stopTrace.load(std::memory_order_acquire))
         continue;
+
+      const int x0 = tx * tileSize;
+      const int y0 = ty * tileSize;
+      const int x1 = std::min(x0 + tileSize, buffer_width);
+      const int y1 = std::min(y0 + tileSize, buffer_height);
+
+      for (int j = y0; j < y1; ++j) {
+        if (stopTrace.load(std::memory_order_acquire))
+          break;
+        for (int i = x0; i < x1; ++i) {
+          glm::dvec3 c = fetchColor(i, j);
+
+          glm::dvec3 cN = fetchColor(i, j - 1);
+          glm::dvec3 cS = fetchColor(i, j + 1);
+          glm::dvec3 cE = fetchColor(i + 1, j);
+          glm::dvec3 cW = fetchColor(i - 1, j);
+
+          double lC = luminance(c);
+          double lN = luminance(cN);
+          double lS = luminance(cS);
+          double lE = luminance(cE);
+          double lW = luminance(cW);
+
+          double lumaMin =
+              std::min(lC, std::min(std::min(lN, lS), std::min(lE, lW)));
+          double lumaMax =
+              std::max(lC, std::max(std::max(lN, lS), std::max(lE, lW)));
+          double contrast = lumaMax - lumaMin;
+
+          if (contrast < contrastThreshold) {
+            setPixel(i, j, c);
+            continue;
+          }
+
+          glm::dvec3 filtered = (c + cN + cS + cE + cW) * 0.2;
+          double blend =
+              std::clamp(contrast / (contrast + contrastThreshold), 0.0, 1.0);
+          blend *= 0.9;
+          glm::dvec3 finalColor = c * (1.0 - blend) + filtered * blend;
+
+          finalColor = glm::clamp(finalColor, 0.0, 1.0);
+          setPixel(i, j, finalColor);
+        }
       }
-
-      glm::dvec3 filtered = (c + cN + cS + cE + cW) * 0.2;
-      double blend =
-          std::clamp(contrast / (contrast + contrastThreshold), 0.0, 1.0);
-      blend *= 0.9;
-      glm::dvec3 finalColor = c * (1.0 - blend) + filtered * blend;
-
-      finalColor = glm::clamp(finalColor, 0.0, 1.0);
-      setPixel(i, j, finalColor);
     }
   }
 

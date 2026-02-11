@@ -7,6 +7,7 @@
 
 #include "scene/cubeMap.h"
 #include "scene/ray.h"
+#include <atomic>
 #include <glm/vec3.hpp>
 #include <mutex>
 #include <queue>
@@ -58,7 +59,7 @@ public:
 
   const Scene &getScene() { return *scene; }
 
-  bool stopTrace;
+  std::atomic<bool> stopTrace{false};
 
 private:
   glm::dvec3 trace(double x, double y);
@@ -113,6 +114,7 @@ private:
 
   bool tir;           // total internal reflection
   bool handleOverlap; // for multiple overlapping transparent objects
+
 
 };
 

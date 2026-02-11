@@ -148,7 +148,7 @@ I set up parallelism by processing the image over rows using OpenMP, treating ea
 
 `hitchcock.json` with `--aaa`:
 - `./build/bin/ray -r 5 --aaa ./extra_credit_scenes/hitchcock.json ./extra_credit_output/hitchcock.png`
-![hitchcock_aaamtg.png](./extra_credit_mtgs/hitchcock_aaa.mtg.png)
+![hitchcock_aaa.mtg.png](./extra_credit_mtgs/hitchcock_aaa.mtg.png)
 The total time to render my image was 2.86 seconds, and there were ~2.54M rays traced.
 
 `hotel.json` with `--aaa`:

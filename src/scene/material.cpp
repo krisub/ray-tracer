@@ -148,7 +148,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     }
   }
 
-  return color; // TESTING
+  return color;
 }
 
 TextureMap::TextureMap(string filename) {
@@ -216,7 +216,6 @@ glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
   //
   // In order to add texture mapping support to the
   // raytracer, you need to implement this function.
-
   if (data.empty() || width <= 0 || height <= 0) {
     return glm::dvec3(1.0, 1.0, 1.0);
   }

@@ -1,14 +1,49 @@
 #include "trimesh.h"
 #include "../ui/TraceUI.h"
 #include <algorithm>
+#include <array>
 #include <assert.h>
 #include <cmath>
 #include <float.h>
+#include <limits>
+#include <numeric>
 #include <string.h>
 extern TraceUI *traceUI;
 extern TraceUI *traceUI;
 
 using namespace std;
+namespace {
+constexpr int kFaceBvhBins = 16;
+constexpr double kFaceBvhTraversalCost = 1.0;
+constexpr double kFaceBvhIntersectCost = 1.0;
+constexpr double kFaceBvhAxisEps = 1e-12;
+
+double bboxSurfaceArea(const BoundingBox &b) {
+  const glm::dvec3 mn = b.getMin();
+  const glm::dvec3 mx = b.getMax();
+  const glm::dvec3 d = glm::max(mx - mn, glm::dvec3(0.0, 0.0, 0.0));
+  return 2.0 * (d.x * d.y + d.y * d.z + d.z * d.x);
+}
+
+int centroidBin(double c, double cmin, double cmax) {
+  const double e = cmax - cmin;
+  if (e <= kFaceBvhAxisEps) {
+    return 0;
+  }
+  double t = (c - cmin) / e;
+  t = std::min(0.999999, std::max(0.0, t));
+  return static_cast<int>(t * kFaceBvhBins);
+}
+
+int maxExtentAxis(const BoundingBox &b) {
+  const glm::dvec3 d = b.getMax() - b.getMin();
+  if (d.x >= d.y && d.x >= d.z)
+    return 0;
+  if (d.y >= d.z)
+    return 1;
+  return 2;
+}
+} // namespace
 
 Trimesh::~Trimesh() { // has a list of triangles (TrimeshFaces)
   for (auto f : faces)
@@ -36,6 +71,7 @@ bool Trimesh::addFace(int a, int b, int c) {
     faces.push_back(newFace);
   else
     delete newFace;
+  faceBvhDirty = true;
 
   // Don't add faces to the scene's object list so we can cull by bounding
   // box
@@ -58,19 +94,252 @@ const char *Trimesh::doubleCheck() {
 // shoots a ray at all triangles in the mesh and keeps whatever pt is closest
 // returns true if there was a hit false otherwise
 bool Trimesh::intersectLocal(ray &r, isect &i) const {
+  rebuildFaceBvhIfNeeded();
+
+  if (faceBvhNodes.empty()) {
+    i.setT(1000.0);
+    return false;
+  }
+
+  // Iterative traversal to avoid recursion overhead.
+  std::vector<uint32_t> stack;
+  stack.reserve(64);
+  stack.push_back(0u);
   bool have_one = false;
-  for (auto face : faces) {
-    isect cur;
-    if (face->intersectLocal(r, cur)) {
-      if (!have_one || (cur.getT() < i.getT())) {
-        i = cur;
-        have_one = true;
+
+  while (!stack.empty()) {
+    const uint32_t nodeIndex = stack.back();
+    stack.pop_back();
+    const FaceBvhNode &node = faceBvhNodes[nodeIndex];
+
+    double nmin = 0.0;
+    double nmax = 0.0;
+    if (!node.bounds.intersect(r, nmin, nmax)) {
+      continue;
+    }
+    if (have_one && nmin > i.getT()) {
+      continue;
+    }
+
+    if (node.count > 0) {
+      const uint32_t end = node.first + node.count;
+      for (uint32_t idx = node.first; idx < end; ++idx) {
+        TrimeshFace *face = faces[faceIndices[idx]];
+        isect cur;
+        if (face->intersectLocal(r, cur)) {
+          if (!have_one || (cur.getT() < i.getT())) {
+            i = cur;
+            have_one = true;
+          }
+        }
       }
+      continue;
+    }
+
+    const FaceBvhNode &left = faceBvhNodes[node.left];
+    const FaceBvhNode &right = faceBvhNodes[node.right];
+    double lmin = 0.0, lmax = 0.0;
+    double rmin = 0.0, rmax = 0.0;
+    const bool hitL = left.bounds.intersect(r, lmin, lmax);
+    const bool hitR = right.bounds.intersect(r, rmin, rmax);
+
+    if (hitL && hitR) {
+      if (lmin <= rmin) {
+        stack.push_back(node.right);
+        stack.push_back(node.left);
+      } else {
+        stack.push_back(node.left);
+        stack.push_back(node.right);
+      }
+    } else if (hitL) {
+      stack.push_back(node.left);
+    } else if (hitR) {
+      stack.push_back(node.right);
     }
   }
+
   if (!have_one)
     i.setT(1000.0);
   return have_one;
+}
+
+void Trimesh::rebuildFaceBvhIfNeeded() const {
+  if (!faceBvhDirty) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> guard(faceBvhBuildMutex);
+  if (!faceBvhDirty) {
+    return;
+  }
+
+  faceIndices.clear();
+  faceBvhNodes.clear();
+
+  const uint32_t nFaces = static_cast<uint32_t>(faces.size());
+  if (nFaces == 0) {
+    faceBvhDirty = false;
+    return;
+  }
+
+  faceIndices.resize(nFaces);
+  std::iota(faceIndices.begin(), faceIndices.end(), 0u);
+  faceBvhNodes.reserve(nFaces * 2u);
+  (void)buildFaceBvhRecursive(0u, nFaces);
+  faceBvhDirty = false;
+}
+
+uint32_t Trimesh::buildFaceBvhRecursive(uint32_t begin, uint32_t end) const {
+  const uint32_t nodeIndex = static_cast<uint32_t>(faceBvhNodes.size());
+  faceBvhNodes.emplace_back();
+  FaceBvhNode &node = faceBvhNodes.back();
+
+  BoundingBox nodeBounds;
+  BoundingBox centroidBounds;
+  for (uint32_t i = begin; i < end; ++i) {
+    const BoundingBox &b = faces[faceIndices[i]]->getBoundingBox();
+    nodeBounds.merge(b);
+    const glm::dvec3 c = 0.5 * (b.getMin() + b.getMax());
+    centroidBounds.merge(BoundingBox(c, c));
+  }
+  node.bounds = nodeBounds;
+
+  const uint32_t count = end - begin;
+  const glm::dvec3 cmin = centroidBounds.getMin();
+  const glm::dvec3 cmax = centroidBounds.getMax();
+  const glm::dvec3 cext = cmax - cmin;
+  const bool degenerateCentroids =
+      (cext.x <= kFaceBvhAxisEps && cext.y <= kFaceBvhAxisEps &&
+       cext.z <= kFaceBvhAxisEps);
+
+  constexpr uint32_t kLeafSize = 8u;
+  if (count <= kLeafSize || degenerateCentroids) {
+    node.first = begin;
+    node.count = count;
+    return nodeIndex;
+  }
+
+  const double parentArea = bboxSurfaceArea(nodeBounds);
+  if (parentArea <= kFaceBvhAxisEps) {
+    node.first = begin;
+    node.count = count;
+    return nodeIndex;
+  }
+
+  double bestCost = std::numeric_limits<double>::infinity();
+  int bestAxis = -1;
+  int bestSplit = -1;
+
+  struct Bin {
+    BoundingBox bounds;
+    uint32_t count = 0;
+  };
+
+  for (int axis = 0; axis < 3; ++axis) {
+    if (cext[axis] <= kFaceBvhAxisEps) {
+      continue;
+    }
+    std::array<Bin, kFaceBvhBins> bins;
+    for (uint32_t i = begin; i < end; ++i) {
+      const BoundingBox &b = faces[faceIndices[i]]->getBoundingBox();
+      const glm::dvec3 c = 0.5 * (b.getMin() + b.getMax());
+      const int bin = centroidBin(c[axis], cmin[axis], cmax[axis]);
+      bins[bin].count++;
+      bins[bin].bounds.merge(b);
+    }
+
+    std::array<double, kFaceBvhBins - 1> leftArea;
+    std::array<double, kFaceBvhBins - 1> rightArea;
+    std::array<uint32_t, kFaceBvhBins - 1> leftCount;
+    std::array<uint32_t, kFaceBvhBins - 1> rightCount;
+
+    BoundingBox leftBounds;
+    uint32_t lcount = 0;
+    for (int i = 0; i < kFaceBvhBins - 1; ++i) {
+      lcount += bins[i].count;
+      leftBounds.merge(bins[i].bounds);
+      leftCount[i] = lcount;
+      leftArea[i] = bboxSurfaceArea(leftBounds);
+    }
+
+    BoundingBox rightBounds;
+    uint32_t rcount = 0;
+    for (int i = kFaceBvhBins - 1; i > 0; --i) {
+      rcount += bins[i].count;
+      rightBounds.merge(bins[i].bounds);
+      rightCount[i - 1] = rcount;
+      rightArea[i - 1] = bboxSurfaceArea(rightBounds);
+    }
+
+    for (int i = 0; i < kFaceBvhBins - 1; ++i) {
+      if (leftCount[i] == 0 || rightCount[i] == 0)
+        continue;
+      const double cost =
+          kFaceBvhTraversalCost +
+          (leftArea[i] / parentArea) * leftCount[i] * kFaceBvhIntersectCost +
+          (rightArea[i] / parentArea) * rightCount[i] * kFaceBvhIntersectCost;
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestAxis = axis;
+        bestSplit = i;
+      }
+    }
+  }
+
+  const double leafCost = static_cast<double>(count) * kFaceBvhIntersectCost;
+  if (bestAxis < 0 || bestCost >= leafCost) {
+    node.first = begin;
+    node.count = count;
+    return nodeIndex;
+  }
+
+  auto first = faceIndices.begin() + begin;
+  auto last = faceIndices.begin() + end;
+  auto midIt = std::partition(first, last, [&](uint32_t faceId) {
+    const BoundingBox &b = faces[faceId]->getBoundingBox();
+    const glm::dvec3 c = 0.5 * (b.getMin() + b.getMax());
+    const int bin = centroidBin(c[bestAxis], cmin[bestAxis], cmax[bestAxis]);
+    return bin <= bestSplit;
+  });
+
+  uint32_t mid = static_cast<uint32_t>(midIt - faceIndices.begin());
+  if (mid == begin || mid == end) {
+    const uint32_t median = begin + (count / 2);
+    std::nth_element(first, faceIndices.begin() + median, last,
+                     [&](uint32_t a, uint32_t b) {
+                       const BoundingBox &ab = faces[a]->getBoundingBox();
+                       const BoundingBox &bb = faces[b]->getBoundingBox();
+                       const glm::dvec3 ac = 0.5 * (ab.getMin() + ab.getMax());
+                       const glm::dvec3 bc = 0.5 * (bb.getMin() + bb.getMax());
+                       return ac[bestAxis] < bc[bestAxis];
+                     });
+    mid = median;
+  }
+
+  if (mid == begin || mid == end) {
+    const int axis = maxExtentAxis(centroidBounds);
+    const uint32_t median = begin + (count / 2);
+    std::nth_element(first, faceIndices.begin() + median, last,
+                     [&](uint32_t a, uint32_t b) {
+                       const BoundingBox &ab = faces[a]->getBoundingBox();
+                       const BoundingBox &bb = faces[b]->getBoundingBox();
+                       const glm::dvec3 ac = 0.5 * (ab.getMin() + ab.getMax());
+                       const glm::dvec3 bc = 0.5 * (bb.getMin() + bb.getMax());
+                       return ac[axis] < bc[axis];
+                     });
+    mid = median;
+  }
+
+  if (mid == begin || mid == end) {
+    node.first = begin;
+    node.count = count;
+    return nodeIndex;
+  }
+
+  node.left = buildFaceBvhRecursive(begin, mid);
+  node.right = buildFaceBvhRecursive(mid, end);
+  node.count = 0;
+  return nodeIndex;
 }
 
 bool TrimeshFace::intersect(ray &r, isect &i) const {

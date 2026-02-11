@@ -50,6 +50,13 @@ std::vector<uint8_t> readBMP(const char *fname, int &width, int &height) {
   width = bmih.biWidth;
   height = bmih.biHeight;
 
+
+  // OG IMPL
+  // compacts each row (removing pad bytes) in-place, but
+  // returns a buffer sized for the padded image. other code infers
+  // rowStride from data.size()/height -> incorrect for padded BMPs
+  // -> diagonal texture sampling.
+  /*
   int padWidth = width * 3;
   int pad = 0;
   if (padWidth % 4 != 0) {
@@ -88,6 +95,45 @@ std::vector<uint8_t> readBMP(const char *fname, int &width, int &height) {
   }
 
   return image;
+  */
+
+  int padWidth = width * 3;
+  int pad = (padWidth % 4) ? (4 - (padWidth % 4)) : 0;
+  padWidth += pad;
+
+  bool topDown = false;
+  if (height < 0) {
+    topDown = true;
+    height = -height;
+  }
+
+  std::vector<uint8_t> packed(static_cast<size_t>(width) *
+                              static_cast<size_t>(height) * 3);
+  std::vector<uint8_t> row(static_cast<size_t>(padWidth));
+
+  for (int j = 0; j < height; ++j) {
+    if (fread(row.data(), padWidth, 1, file) != 1) {
+      fclose(file);
+      return std::vector<uint8_t>();
+    }
+
+    int outRow = topDown ? (height - 1 - j) : j;
+    uint8_t *dst = packed.data() + (static_cast<size_t>(outRow) *
+                                    static_cast<size_t>(width) * 3);
+
+    for (int i = 0; i < width; ++i) {
+      const uint8_t b = row[static_cast<size_t>(i) * 3 + 0];
+      const uint8_t g = row[static_cast<size_t>(i) * 3 + 1];
+      const uint8_t r = row[static_cast<size_t>(i) * 3 + 2];
+
+      dst[static_cast<size_t>(i) * 3 + 0] = r;
+      dst[static_cast<size_t>(i) * 3 + 1] = g;
+      dst[static_cast<size_t>(i) * 3 + 2] = b;
+    }
+  }
+
+  fclose(file);
+  return packed;
 }
 
 void writeBMP(const char *iname, int width, int height, const void *vdata) {

@@ -2,7 +2,9 @@
 #define TRIMESH_H__
 
 #include <list>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "../scene/kdTree.h"
@@ -29,6 +31,22 @@ class Trimesh : public SceneObject {
   VertColors vertColors;
   UVCoords uvCoords;
   BoundingBox localBounds;
+
+  struct FaceBvhNode {
+    BoundingBox bounds;
+    uint32_t left = 0;
+    uint32_t right = 0;
+    uint32_t first = 0;
+    uint32_t count = 0;
+  };
+
+  mutable std::vector<uint32_t> faceIndices;
+  mutable std::vector<FaceBvhNode> faceBvhNodes;
+  mutable bool faceBvhDirty = true;
+  mutable std::mutex faceBvhBuildMutex;
+
+  void rebuildFaceBvhIfNeeded() const;
+  uint32_t buildFaceBvhRecursive(uint32_t begin, uint32_t end) const;
 
 public:
   Trimesh(Scene *scene, Material *mat, MatrixTransform transform)
