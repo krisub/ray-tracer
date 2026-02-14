@@ -9,6 +9,8 @@ public:
 
   virtual bool intersectLocal(ray &r, isect &i) const;
   virtual bool hasBoundingBoxCapability() const { return true; }
+  bool sampleSurfacePoint(double u, double v, glm::dvec3 &worldPoint,
+                          glm::dvec3 &worldNormal, double &worldArea) const override;
 
   virtual BoundingBox ComputeLocalBoundingBox() {
     BoundingBox localbounds;

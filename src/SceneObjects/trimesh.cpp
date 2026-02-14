@@ -3,12 +3,16 @@
 #include <algorithm>
 #include <array>
 #include <assert.h>
+#include <cfloat>
 #include <cmath>
+#include <cstdint>
 #include <float.h>
 #include <limits>
 #include <numeric>
 #include <string.h>
-extern TraceUI *traceUI;
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 extern TraceUI *traceUI;
 
 using namespace std;
@@ -42,6 +46,55 @@ int maxExtentAxis(const BoundingBox &b) {
   if (d.y >= d.z)
     return 1;
   return 2;
+}
+
+inline void sortHitLanesByTNear(uint8_t *lanes, float *tnear, uint8_t count) {
+  if (count < 2u) {
+    return;
+  }
+  if (count == 2u) {
+    if (tnear[0] > tnear[1]) {
+      std::swap(tnear[0], tnear[1]);
+      std::swap(lanes[0], lanes[1]);
+    }
+    return;
+  }
+  for (uint8_t i = 1; i < count; ++i) {
+    const uint8_t lane = lanes[i];
+    const float t = tnear[i];
+    int j = static_cast<int>(i) - 1;
+    while (j >= 0 && tnear[static_cast<size_t>(j)] > t) {
+      lanes[static_cast<size_t>(j) + 1] = lanes[static_cast<size_t>(j)];
+      tnear[static_cast<size_t>(j) + 1] = tnear[static_cast<size_t>(j)];
+      --j;
+    }
+    lanes[static_cast<size_t>(j) + 1] = lane;
+    tnear[static_cast<size_t>(j) + 1] = t;
+  }
+}
+
+bool intersectAabb(const glm::dvec3 &origin, const glm::dvec3 &invDir,
+                   const glm::dvec3 &bmin, const glm::dvec3 &bmax,
+                   double &tminOut, double &tmaxOut) {
+  double tmin = -std::numeric_limits<double>::infinity();
+  double tmax = std::numeric_limits<double>::infinity();
+
+  for (int axis = 0; axis < 3; ++axis) {
+    double t0 = (bmin[axis] - origin[axis]) * invDir[axis];
+    double t1 = (bmax[axis] - origin[axis]) * invDir[axis];
+    if (t0 > t1) {
+      std::swap(t0, t1);
+    }
+    tmin = std::max(tmin, t0);
+    tmax = std::min(tmax, t1);
+    if (tmax < tmin) {
+      return false;
+    }
+  }
+
+  tminOut = tmin;
+  tmaxOut = tmax;
+  return tmax >= std::max(tmin, RAY_EPSILON);
 }
 } // namespace
 
@@ -101,34 +154,42 @@ bool Trimesh::intersectLocal(ray &r, isect &i) const {
     return false;
   }
 
-  // Iterative traversal to avoid recursion overhead.
-  std::vector<uint32_t> stack;
-  stack.reserve(64);
-  stack.push_back(0u);
-  bool have_one = false;
+  const bool useWide8 =
+      traceUI && traceUI->blasAccelMode() == TraceUI::AccelMode::Wide8;
+  if (useWide8 && !faceBvh8Nodes.empty()) {
+    return intersectWide8(r, i);
+  }
+  return intersectBinary(r, i);
+}
 
-  while (!stack.empty()) {
-    const uint32_t nodeIndex = stack.back();
-    stack.pop_back();
+bool Trimesh::intersectBinary(ray &r, isect &i) const {
+  const glm::dvec3 origin = r.getPosition();
+  const glm::dvec3 dir = r.getDirection();
+  const glm::dvec3 invDir(
+      std::abs(dir.x) > 0.0 ? 1.0 / dir.x : std::copysign(1.0e308, dir.x),
+      std::abs(dir.y) > 0.0 ? 1.0 / dir.y : std::copysign(1.0e308, dir.y),
+      std::abs(dir.z) > 0.0 ? 1.0 / dir.z : std::copysign(1.0e308, dir.z));
+
+  std::array<uint32_t, 128> stack{};
+  uint32_t top = 0u;
+  stack[top++] = 0u;
+  bool have_one = false;
+  double bestT = std::numeric_limits<double>::infinity();
+
+  while (top > 0u) {
+    const uint32_t nodeIndex = stack[--top];
     const FaceBvhNode &node = faceBvhNodes[nodeIndex];
 
-    double nmin = 0.0;
-    double nmax = 0.0;
-    if (!node.bounds.intersect(r, nmin, nmax)) {
-      continue;
-    }
-    if (have_one && nmin > i.getT()) {
-      continue;
-    }
-
     if (node.count > 0) {
+      // Leaf: test faces.
       const uint32_t end = node.first + node.count;
       for (uint32_t idx = node.first; idx < end; ++idx) {
         TrimeshFace *face = faces[faceIndices[idx]];
         isect cur;
-        if (face->intersectLocal(r, cur)) {
-          if (!have_one || (cur.getT() < i.getT())) {
+        if (face->intersectLocal(r, cur, bestT)) {
+          if (cur.getT() < bestT) {
             i = cur;
+            bestT = cur.getT();
             have_one = true;
           }
         }
@@ -136,31 +197,277 @@ bool Trimesh::intersectLocal(ray &r, isect &i) const {
       continue;
     }
 
-    const FaceBvhNode &left = faceBvhNodes[node.left];
-    const FaceBvhNode &right = faceBvhNodes[node.right];
+    // test children bounds once, cull against bestT, push in order.
     double lmin = 0.0, lmax = 0.0;
     double rmin = 0.0, rmax = 0.0;
-    const bool hitL = left.bounds.intersect(r, lmin, lmax);
-    const bool hitR = right.bounds.intersect(r, rmin, rmax);
+    bool hitL = faceBvhNodes[node.left].bounds.intersect(origin, invDir, lmin, lmax);
+    bool hitR = faceBvhNodes[node.right].bounds.intersect(origin, invDir, rmin, rmax);
+
+    if (hitL && lmin > bestT) hitL = false;
+    if (hitR && rmin > bestT) hitR = false;
 
     if (hitL && hitR) {
       if (lmin <= rmin) {
-        stack.push_back(node.right);
-        stack.push_back(node.left);
+        stack[top++] = node.right;
+        stack[top++] = node.left;
       } else {
-        stack.push_back(node.left);
-        stack.push_back(node.right);
+        stack[top++] = node.left;
+        stack[top++] = node.right;
       }
     } else if (hitL) {
-      stack.push_back(node.left);
+      stack[top++] = node.left;
     } else if (hitR) {
-      stack.push_back(node.right);
+      stack[top++] = node.right;
     }
   }
 
   if (!have_one)
     i.setT(1000.0);
   return have_one;
+}
+
+bool Trimesh::isFaceBinaryLeaf(uint32_t idx) const {
+  return faceBvhNodes[idx].count > 0;
+}
+
+uint32_t Trimesh::buildWide8FromBinary(uint32_t binaryRoot) const {
+  const uint32_t wideIndex = static_cast<uint32_t>(faceBvh8Nodes.size());
+  faceBvh8Nodes.emplace_back();
+
+  const FaceBvhNode &root = faceBvhNodes[binaryRoot];
+  if (isFaceBinaryLeaf(binaryRoot)) {
+    faceBvh8Nodes[wideIndex].childCount = 1;
+    faceBvh8Nodes[wideIndex].leafMask = 0x1u;
+    faceBvh8Nodes[wideIndex].minX[0] = static_cast<float>(root.bounds.getMin().x);
+    faceBvh8Nodes[wideIndex].minY[0] = static_cast<float>(root.bounds.getMin().y);
+    faceBvh8Nodes[wideIndex].minZ[0] = static_cast<float>(root.bounds.getMin().z);
+    faceBvh8Nodes[wideIndex].maxX[0] = static_cast<float>(root.bounds.getMax().x);
+    faceBvh8Nodes[wideIndex].maxY[0] = static_cast<float>(root.bounds.getMax().y);
+    faceBvh8Nodes[wideIndex].maxZ[0] = static_cast<float>(root.bounds.getMax().z);
+    faceBvh8Nodes[wideIndex].first[0] = root.first;
+    faceBvh8Nodes[wideIndex].count[0] = root.count;
+    return wideIndex;
+  }
+
+  std::vector<uint32_t> children;
+  children.reserve(8);
+  children.push_back(root.left);
+  children.push_back(root.right);
+
+  while (children.size() < 8u) {
+    int splitPos = -1;
+    double bestArea = -1.0;
+    for (int i = 0; i < static_cast<int>(children.size()); ++i) {
+      const uint32_t c = children[static_cast<size_t>(i)];
+      if (isFaceBinaryLeaf(c)) {
+        continue;
+      }
+      const FaceBvhNode &cn = faceBvhNodes[c];
+      const glm::dvec3 d = glm::max(cn.bounds.getMax() - cn.bounds.getMin(),
+                                    glm::dvec3(0.0, 0.0, 0.0));
+      const double area = 2.0 * (d.x * d.y + d.y * d.z + d.z * d.x);
+      if (area > bestArea) {
+        bestArea = area;
+        splitPos = i;
+      }
+    }
+    if (splitPos < 0) {
+      break;
+    }
+    const uint32_t splitNode = children[static_cast<size_t>(splitPos)];
+    const FaceBvhNode &sn = faceBvhNodes[splitNode];
+    children[static_cast<size_t>(splitPos)] = sn.left;
+    children.insert(children.begin() + splitPos + 1, sn.right);
+  }
+
+  faceBvh8Nodes[wideIndex].childCount = static_cast<uint8_t>(children.size());
+  for (uint8_t lane = 0; lane < faceBvh8Nodes[wideIndex].childCount; ++lane) {
+    const uint32_t childRoot = children[lane];
+    const FaceBvhNode &bn = faceBvhNodes[childRoot];
+    faceBvh8Nodes[wideIndex].minX[lane] = static_cast<float>(bn.bounds.getMin().x);
+    faceBvh8Nodes[wideIndex].minY[lane] = static_cast<float>(bn.bounds.getMin().y);
+    faceBvh8Nodes[wideIndex].minZ[lane] = static_cast<float>(bn.bounds.getMin().z);
+    faceBvh8Nodes[wideIndex].maxX[lane] = static_cast<float>(bn.bounds.getMax().x);
+    faceBvh8Nodes[wideIndex].maxY[lane] = static_cast<float>(bn.bounds.getMax().y);
+    faceBvh8Nodes[wideIndex].maxZ[lane] = static_cast<float>(bn.bounds.getMax().z);
+
+    if (isFaceBinaryLeaf(childRoot)) {
+      faceBvh8Nodes[wideIndex].leafMask |= static_cast<uint8_t>(1u << lane);
+      faceBvh8Nodes[wideIndex].first[lane] = bn.first;
+      faceBvh8Nodes[wideIndex].count[lane] = bn.count;
+    } else {
+      faceBvh8Nodes[wideIndex].childNode[lane] = buildWide8FromBinary(childRoot);
+    }
+  }
+
+  return wideIndex;
+}
+
+void Trimesh::buildWide8() const {
+  faceBvh8Nodes.clear();
+  if (faceBvhNodes.empty()) {
+    return;
+  }
+  faceBvh8Nodes.reserve(faceBvhNodes.size());
+  (void)buildWide8FromBinary(0u);
+}
+
+bool Trimesh::intersectWide8(ray &r, isect &i) const {
+  if (faceBvh8Nodes.empty()) {
+    return false;
+  }
+
+  struct Task {
+    uint8_t kind = 0; // 0=node, 1=leaf range
+    uint32_t node = 0;
+    uint32_t first = 0;
+    uint32_t count = 0;
+    float tmin = 0.0f;
+  };
+
+  std::array<Task, 128> stack{};
+  uint32_t top = 0u;
+
+  bool haveOne = false;
+  double bestT = std::numeric_limits<double>::infinity();
+  stack[top++] = Task{0u, 0u, 0u, 0u, -FLT_MAX};
+
+  // precompute origin and inverse direction once per ray.
+  const glm::dvec3 origin = r.getPosition();
+  const glm::dvec3 dir = r.getDirection();
+  const glm::dvec3 invDir(
+      std::abs(dir.x) > 0.0 ? 1.0 / dir.x : std::copysign(1.0e308, dir.x),
+      std::abs(dir.y) > 0.0 ? 1.0 / dir.y : std::copysign(1.0e308, dir.y),
+      std::abs(dir.z) > 0.0 ? 1.0 / dir.z : std::copysign(1.0e308, dir.z));
+
+#if defined(__AVX2__)
+  const bool canUseAvx = (std::abs(dir.x) > kFaceBvhAxisEps &&
+                          std::abs(dir.y) > kFaceBvhAxisEps &&
+                          std::abs(dir.z) > kFaceBvhAxisEps);
+  const __m256 ox = _mm256_set1_ps(static_cast<float>(origin.x));
+  const __m256 oy = _mm256_set1_ps(static_cast<float>(origin.y));
+  const __m256 oz = _mm256_set1_ps(static_cast<float>(origin.z));
+  const __m256 invx = _mm256_set1_ps(static_cast<float>(1.0 / dir.x));
+  const __m256 invy = _mm256_set1_ps(static_cast<float>(1.0 / dir.y));
+  const __m256 invz = _mm256_set1_ps(static_cast<float>(1.0 / dir.z));
+  const __m256 eps = _mm256_set1_ps(static_cast<float>(RAY_EPSILON));
+#endif
+
+  while (top > 0u) {
+    const Task task = stack[--top];
+    if (task.tmin > static_cast<float>(bestT)) {
+      continue;
+    }
+
+    if (task.kind == 1u) {
+      const uint32_t end = task.first + task.count;
+      for (uint32_t idx = task.first; idx < end; ++idx) {
+        TrimeshFace *face = faces[faceIndices[idx]];
+        isect cur;
+        if (face->intersectLocal(r, cur, bestT) && cur.getT() < bestT) {
+          i = cur;
+          bestT = cur.getT();
+          haveOne = true;
+        }
+      }
+      continue;
+    }
+
+    const FaceBvh8Node &wn = faceBvh8Nodes[task.node];
+    if (wn.childCount == 0u) {
+      continue;
+    }
+
+    float childTMin[8] = {FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX,
+                          FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX};
+    uint8_t hitMask = 0u;
+    bool didAvxTest = false;
+
+#if defined(__AVX2__)
+    if (canUseAvx) {
+      didAvxTest = true;
+      const __m256 bminx = _mm256_loadu_ps(wn.minX);
+      const __m256 bminy = _mm256_loadu_ps(wn.minY);
+      const __m256 bminz = _mm256_loadu_ps(wn.minZ);
+      const __m256 bmaxx = _mm256_loadu_ps(wn.maxX);
+      const __m256 bmaxy = _mm256_loadu_ps(wn.maxY);
+      const __m256 bmaxz = _mm256_loadu_ps(wn.maxZ);
+
+      const __m256 tx1 = _mm256_mul_ps(_mm256_sub_ps(bminx, ox), invx);
+      const __m256 tx2 = _mm256_mul_ps(_mm256_sub_ps(bmaxx, ox), invx);
+      const __m256 ty1 = _mm256_mul_ps(_mm256_sub_ps(bminy, oy), invy);
+      const __m256 ty2 = _mm256_mul_ps(_mm256_sub_ps(bmaxy, oy), invy);
+      const __m256 tz1 = _mm256_mul_ps(_mm256_sub_ps(bminz, oz), invz);
+      const __m256 tz2 = _mm256_mul_ps(_mm256_sub_ps(bmaxz, oz), invz);
+
+      const __m256 txmin = _mm256_min_ps(tx1, tx2);
+      const __m256 txmax = _mm256_max_ps(tx1, tx2);
+      const __m256 tymin = _mm256_min_ps(ty1, ty2);
+      const __m256 tymax = _mm256_max_ps(ty1, ty2);
+      const __m256 tzmin = _mm256_min_ps(tz1, tz2);
+      const __m256 tzmax = _mm256_max_ps(tz1, tz2);
+
+      const __m256 tmin = _mm256_max_ps(_mm256_max_ps(txmin, tymin), tzmin);
+      const __m256 tmax = _mm256_min_ps(_mm256_min_ps(txmax, tymax), tzmax);
+      const __m256 best = _mm256_set1_ps(static_cast<float>(bestT));
+      const __m256 validA = _mm256_cmp_ps(tmax, _mm256_max_ps(tmin, eps), _CMP_GE_OQ);
+      const __m256 validB = _mm256_cmp_ps(tmin, best, _CMP_LE_OQ);
+      const __m256 valid = _mm256_and_ps(validA, validB);
+      uint32_t mask = static_cast<uint32_t>(_mm256_movemask_ps(valid));
+
+      alignas(32) float tmins8[8];
+      _mm256_store_ps(tmins8, tmin);
+      for (uint8_t lane = 0; lane < wn.childCount; ++lane) {
+        childTMin[lane] = tmins8[lane];
+      }
+      hitMask = static_cast<uint8_t>(mask & ((1u << wn.childCount) - 1u));
+    }
+#endif
+
+    if (!didAvxTest) {
+      for (uint8_t lane = 0; lane < wn.childCount; ++lane) {
+        const glm::dvec3 cmin(wn.minX[lane], wn.minY[lane], wn.minZ[lane]);
+        const glm::dvec3 cmax(wn.maxX[lane], wn.maxY[lane], wn.maxZ[lane]);
+        double tmin = 0.0, tmax = 0.0;
+        if (intersectAabb(origin, invDir, cmin, cmax, tmin, tmax) && tmin <= bestT) {
+          hitMask |= static_cast<uint8_t>(1u << lane);
+          childTMin[lane] = static_cast<float>(tmin);
+        }
+      }
+    }
+
+    uint8_t hitLanes[8];
+    float hitTMin[8];
+    uint8_t hitCount = 0u;
+    for (uint8_t lane = 0; lane < wn.childCount; ++lane) {
+      if ((hitMask & static_cast<uint8_t>(1u << lane)) == 0u) {
+        continue;
+      }
+      hitLanes[hitCount] = lane;
+      hitTMin[hitCount] = childTMin[lane];
+      ++hitCount;
+    }
+    sortHitLanesByTNear(hitLanes, hitTMin, hitCount);
+
+    for (int k = static_cast<int>(hitCount) - 1; k >= 0; --k) {
+      const uint8_t lane = hitLanes[static_cast<size_t>(k)];
+      const float tmin = hitTMin[static_cast<size_t>(k)];
+      if (tmin > static_cast<float>(bestT)) {
+        continue;
+      }
+      const bool isLeaf = (wn.leafMask & static_cast<uint8_t>(1u << lane)) != 0u;
+      if (isLeaf) {
+        stack[top++] = Task{1u, 0u, wn.first[lane], wn.count[lane], tmin};
+      } else {
+        stack[top++] = Task{0u, wn.childNode[lane], 0u, 0u, tmin};
+      }
+    }
+  }
+
+  if (!haveOne) {
+    i.setT(1000.0);
+  }
+  return haveOne;
 }
 
 void Trimesh::rebuildFaceBvhIfNeeded() const {
@@ -175,6 +482,7 @@ void Trimesh::rebuildFaceBvhIfNeeded() const {
 
   faceIndices.clear();
   faceBvhNodes.clear();
+  faceBvh8Nodes.clear();
 
   const uint32_t nFaces = static_cast<uint32_t>(faces.size());
   if (nFaces == 0) {
@@ -186,6 +494,9 @@ void Trimesh::rebuildFaceBvhIfNeeded() const {
   std::iota(faceIndices.begin(), faceIndices.end(), 0u);
   faceBvhNodes.reserve(nFaces * 2u);
   (void)buildFaceBvhRecursive(0u, nFaces);
+  if (traceUI && traceUI->blasAccelMode() == TraceUI::AccelMode::Wide8) {
+    buildWide8();
+  }
   faceBvhDirty = false;
 }
 
@@ -360,7 +671,7 @@ which we can write as a matrix equation:
 // Intersect ray r with the triangle abc.  If it hits returns true,
 // and put the parameter in t and the barycentric coordinates of the
 // intersection in u (alpha) and v (beta).
-bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
+bool TrimeshFace::intersectLocal(ray &r, isect &i, double bestT) const {
   // YOUR CODE HERE
   //
   // FIXME: Add ray-trimesh intersection
@@ -377,12 +688,8 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
      - If neither is true, assign the parent's material to the intersection.
   */
 
-  const glm::dvec3 &a = parent->vertices[ids[0]]; // TrimeshFace constructor
-  const glm::dvec3 &b = parent->vertices[ids[1]];
-  const glm::dvec3 &c = parent->vertices[ids[2]];
-
-  glm::dvec3 ABedge = b - a; // starting at a, the vector that gets to b. AB
-  glm::dvec3 ACedge = c - a; // AC
+  const glm::dvec3 &ABedge = e1;
+  const glm::dvec3 &ACedge = e2;
   /*
   a point is inside the triangle if all of its barycentric coordinates
   sum to 1 and are all positive. if a point is outside the triangle then
@@ -396,31 +703,24 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
   */
   glm::dvec3 o = r.getPosition();
   glm::dvec3 d = r.getDirection();
-  glm::dvec3 AO = o - a; // vector from a to ray origin. AO
+  glm::dvec3 AO = o - v0; // vector from v0 to ray origin
 
   glm::dvec3 dCrossAC = glm::cross(d, ACedge);
   double det = glm::dot(ABedge, dCrossAC);
 
   const double EPS = 1e-8;
-  // no bkface culling
-  // if (fabs(det) < EPS)
-  //   return false; // ray is parallel. (TODO: or runs along edge? is that
-  // //   valid?)
 
-  // backface culling
-
-  const Material &mat = parent->getMaterial();
-  // TODO: change when texture mapping
-  bool isTransmissive = (glm::length(mat.kt(isect())) > 1e-6);
-
-  if (traceUI->bkFaceSw() && !isTransmissive) {
+  // const glm::dvec3 kt = parent->getMaterial().kt(isect());
+  // const bool hasTransmission = (kt.x > 1e-6 || kt.y > 1e-6 || kt.z > 1e-6);
+  const bool trans = parent->getMaterial().Trans();
+  const bool cullBackface = traceUI && traceUI->bkFaceSw() && !trans &&
+                            r.type() != ray::SHADOW;
+  if (cullBackface) {
     if (det < EPS) {
-      return false; // ray is parallel or backfacing
+      return false;
     }
-  } else {
-    if (fabs(det) < EPS) {
-      return false; // ray is parallel, may or may not be backfacing
-    }
+  } else if (fabs(det) < EPS) {
+    return false;
   }
 
   // u, v, t
@@ -429,12 +729,13 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
   if (u < 0.0 || u > 1.0)
     return false;
 
-  double v = glm::dot(d, glm::cross(AO, ABedge)) / det;
+  const glm::dvec3 aoCrossAb = glm::cross(AO, ABedge);
+  double v = glm::dot(d, aoCrossAb) / det;
   if (v < 0.0 || (u + v) > 1.0)
     return false;
 
-  double t = glm::dot(ACedge, glm::cross(AO, ABedge)) / det;
-  if (t < EPS /*|| t > i.getT()*/)
+  double t = glm::dot(ACedge, aoCrossAb) / det;
+  if (t < EPS || t > bestT)
     return false; // intersection is behind ray or farther than a previous hit
 
   // setting stuff
@@ -479,8 +780,6 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     Material m = this->parent->getMaterial();
     m.setDiffuse(interpolatedColor);
     i.setMaterial(m);
-  } else {
-    i.setMaterial(this->parent->getMaterial());
   }
 
   return true;

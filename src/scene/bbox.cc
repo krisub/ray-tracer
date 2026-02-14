@@ -62,6 +62,31 @@ bool BoundingBox::intersect(const ray &r, double &tMin, double &tMax) const {
   return true; // it made it past all 3 axes.
 }
 
+bool BoundingBox::intersect(const glm::dvec3 &origin, const glm::dvec3 &invDir,
+                            double &tMin, double &tMax) const {
+  tMin = -1.0e308;
+  tMax = 1.0e308;
+
+  for (int axis = 0; axis < 3; ++axis) {
+    double t1 = (bmin[axis] - origin[axis]) * invDir[axis];
+    double t2 = (bmax[axis] - origin[axis]) * invDir[axis];
+    if (t1 > t2) {
+      double tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+    }
+    if (t1 > tMin)
+      tMin = t1;
+    if (t2 < tMax)
+      tMax = t2;
+    if (tMin > tMax)
+      return false;
+    if (tMax < RAY_EPSILON)
+      return false;
+  }
+  return true;
+}
+
 double BoundingBox::area() {
   if (bEmpty)
     return 0.0;

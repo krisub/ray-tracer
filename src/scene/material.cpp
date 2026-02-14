@@ -2,13 +2,17 @@
 #include "../ui/TraceUI.h"
 #include "light.h"
 #include "ray.h"
+#include "scene.h"
 extern TraceUI *traceUI;
 
 #include "../fileio/images.h"
+#include "../interp.h"
 #include <glm/gtx/io.hpp>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#define _USE_MATH_DEFINES 
+#include <cmath>
 
 using namespace std;
 extern bool debugMode;
@@ -96,15 +100,13 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   */
   // std::cout << "shading at t=" << i.getT() << std::endl;
   glm::dvec3 hitPoint = r.at(i);
-  glm::dvec3 surfaceNormal = glm::normalize(i.getN());
-  glm::dvec3 cameraDir =
-      glm::normalize(-r.getDirection()); // negative ray direction
+  const glm::dvec3 &surfaceNormal = i.getN();  // already unit (intersection code)
+  const glm::dvec3 cameraDir = -r.getDirection();  // ray dir is unit
+
   glm::dvec3 color = ke(i) + ka(i) * scene->ambient();
 
   for (const auto &pLight : scene->getAllLights()) {
-    glm::dvec3 dirToLight = glm::normalize(
-        pLight->getDirection(hitPoint)); // direction from SURFACE (from the
-                                         // intersection/hit point) to light
+    const glm::dvec3 dirToLight = pLight->getDirection(hitPoint);  // already unit
 
     double distAtten = pLight->distanceAttenuation(hitPoint);
     if (distAtten < 1e-6)
@@ -136,8 +138,9 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     // only do specular if diffuse component exists
     glm::dvec3 effectiveNormal =
         (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
-    glm::dvec3 reflectionVector = glm::normalize(
-        (2.0 * glm::abs(diffuseDot) * effectiveNormal) - dirToLight);
+    // reflection formula R = 2*dot(N,L)*N - L yields unit vector when N,L are unit
+    glm::dvec3 reflectionVector =
+        (2.0 * glm::abs(diffuseDot) * effectiveNormal) - dirToLight;
 
     double specularReflection = glm::dot(reflectionVector, cameraDir);
     if (specularReflection > 0) {
@@ -146,6 +149,66 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
           ks(i) * pLight->getColor() * pow(specularReflection, shine);
       color += distAtten * shadowAtten * specular;
     }
+  }
+
+  // Area lights from emissive objects (only when --goop): sample surface, cast
+  // shadow ray; if we hit the emissive object we're lit, else blocked.
+  if (traceUI && traceUI->getGoop()) {
+  const std::vector<SceneObject *> emissiveObjs = scene->getEmissiveObjects();
+  constexpr int kEmissiveSamples = 8;
+  isect dummyIsect;
+  for (SceneObject *emissiveObj : emissiveObjs) {
+    double worldArea = 0.0;
+    for (int s = 0; s < kEmissiveSamples; ++s) {
+      const double u = (s % 4) / 4.0 + 0.125;
+      const double v = (s / 4) / 2.0 + 0.25;
+      glm::dvec3 lightPoint, lightNormal;
+      if (!emissiveObj->sampleSurfacePoint(u, v, lightPoint, lightNormal,
+                                           worldArea))
+        break;
+      const glm::dvec3 toLight = lightPoint - hitPoint;
+      const double dist = glm::length(toLight);
+      if (dist < 1e-6)
+        continue;
+      const glm::dvec3 dirToLight = toLight / dist;
+      ray shadowRay(hitPoint + dirToLight * RAY_EPSILON, dirToLight,
+                    glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+      isect shadowIsect;
+      if (!scene->intersect(shadowRay, shadowIsect))
+        continue;
+      // blocked unless we hit the emissive object itself (then light reaches us)
+      if (shadowIsect.getObject() != emissiveObj)
+        continue;
+      const double hitDist = shadowIsect.getT();
+      if (hitDist < 1e-6)
+        continue;
+      const glm::dvec3 hitLightNormal = shadowIsect.getN();
+      const glm::dvec3 Le =
+          shadowIsect.getMaterial().ke(shadowIsect);
+      const double cosLight =
+          std::max(0.0, glm::dot(hitLightNormal, -dirToLight));
+      const double geometryTerm =
+          (worldArea / static_cast<double>(kEmissiveSamples)) * cosLight /
+          (hitDist * hitDist);
+      if (geometryTerm < 1e-12)
+        continue;
+      double diffuseDot = glm::dot(surfaceNormal, dirToLight);
+      double diffuseReflection =
+          (kt(i).x > 1e-6 || kt(i).y > 1e-6 || kt(i).z > 1e-6)
+              ? std::abs(diffuseDot)
+              : std::max(0.0, diffuseDot);
+      if (diffuseReflection > 0)
+        color += geometryTerm * Le * kd(i) * diffuseReflection;
+      glm::dvec3 effectiveNormal =
+          (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
+      glm::dvec3 reflectionVector =
+          (2.0 * std::abs(diffuseDot) * effectiveNormal) - dirToLight;
+      double specularReflection = glm::dot(reflectionVector, cameraDir);
+      if (specularReflection > 0)
+        color += geometryTerm * Le * ks(i) *
+                 std::pow(specularReflection, shininess(i));
+    }
+  }
   }
 
   return color;
@@ -164,33 +227,53 @@ TextureMap::TextureMap(string filename) {
 }
 
 glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
-  // YOUR CODE HERE
-  //
-  // In order to add texture mapping support to the
-  // raytracer, you need to implement this function.
-  // What this function should do is convert from
-  // parametric space which is the unit square
-  // [0, 1] x [0, 1] in 2-space to bitmap coordinates,
-  // and use these to perform bilinear interpolation
-  // of the values.
-
   if (data.empty() || width <= 0 || height <= 0) {
     return glm::dvec3(1.0, 1.0, 1.0);
   }
 
-  auto clamp01 = [](double v) {
-    if (v < 0.0)
-      return 0.0;
-    if (v > 1.0)
-      return 1.0;
-    return v;
-  };
-
-  double u = clamp01(coord.x);
-  double v = clamp01(coord.y);
+  double u = interp::clamp01(coord.x);
+  double v = interp::clamp01(coord.y);
 
   double x = u * (width - 1);
   double y = v * (height - 1);
+
+  if (traceUI && traceUI->sincTexture()) {
+    constexpr int LANCZOS_RADIUS = 2;
+    static auto sinc = [](double t) -> double {
+      if (std::abs(t) < 1e-10)
+        return 1.0;
+      const double pi_t = M_PI * t;
+      return std::sin(pi_t) / pi_t;
+    };
+    auto lanczos2 = [&sinc](double t) -> double {
+      if (std::abs(t) >= LANCZOS_RADIUS)
+        return 0.0;
+      return sinc(t) * sinc(t / LANCZOS_RADIUS);
+    };
+
+    int ix0 = static_cast<int>(std::floor(x));
+    int iy0 = static_cast<int>(std::floor(y));
+    glm::dvec3 sum(0, 0, 0);
+    double wsum = 0;
+
+    for (int j = iy0 - LANCZOS_RADIUS + 1; j <= iy0 + LANCZOS_RADIUS; ++j) {
+      double wy = lanczos2(y - j);
+      if (wy == 0)
+        continue;
+      for (int i = ix0 - LANCZOS_RADIUS + 1; i <= ix0 + LANCZOS_RADIUS; ++i) {
+        double wx = lanczos2(x - i);
+        if (wx == 0)
+          continue;
+        double w = wx * wy;
+        sum += w * getPixelAt(i, j);
+        wsum += w;
+      }
+    }
+
+    if (wsum < 1e-10)
+      return getPixelAt(ix0, iy0);
+    return sum / wsum;
+  }
 
   int x0 = static_cast<int>(floor(x));
   int y0 = static_cast<int>(floor(y));
@@ -205,10 +288,7 @@ glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
   glm::dvec3 c01 = getPixelAt(x0, y1);
   glm::dvec3 c11 = getPixelAt(x1, y1);
 
-  glm::dvec3 c0 = (1.0 - dx) * c00 + dx * c10;
-  glm::dvec3 c1 = (1.0 - dx) * c01 + dx * c11;
-
-  return (1.0 - dy) * c0 + dy * c1;
+  return interp::bilerp(c00, c10, c01, c11, dx, dy);
 }
 
 glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
@@ -250,7 +330,7 @@ glm::dvec3 MaterialParameter::value(const isect &is) const {
 double MaterialParameter::intensityValue(const isect &is) const {
   if (0 != _textureMap) {
     glm::dvec3 value(_textureMap->getMappedValue(is.getUVCoordinates()));
-    return (0.299 * value[0]) + (0.587 * value[1]) + (0.114 * value[2]);
+    return interp::luminance601(value);
   } else
-    return (0.299 * _value[0]) + (0.587 * _value[1]) + (0.114 * _value[2]);
+    return interp::luminance601(_value);
 }

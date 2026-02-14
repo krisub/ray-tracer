@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "bbox.h"
@@ -33,6 +34,7 @@ using std::unique_ptr;
 class Light;
 class Scene;
 class Bvh;
+class Trimesh;
 
 template <typename Obj> class KdTree;
 
@@ -135,6 +137,19 @@ public:
                            [[maybe_unused]] bool actualMaterials,
                            [[maybe_unused]] bool actualTextures) const {}
 
+  /// Sample a point on the surface for area-light sampling. (u,v) in [0,1].
+  /// Returns world-space point, normal, and total world-space area. Default: false (not sampleable).
+  virtual bool sampleSurfacePoint(double u, double v, glm::dvec3 &worldPoint,
+                                  glm::dvec3 &worldNormal,
+                                  double &worldArea) const {
+    (void)u;
+    (void)v;
+    (void)worldPoint;
+    (void)worldNormal;
+    (void)worldArea;
+    return false;
+  }
+
 protected:
   BoundingBox bounds;
   MatrixTransform transform;
@@ -182,6 +197,9 @@ public:
   auto endObjects() const { return objects.cend(); }
   const auto &getAllObjects() const { return objects; }
 
+  /// Objects with non-zero emissive (for area/volume light sampling). Built on first call.
+  std::vector<SceneObject *> getEmissiveObjects() const;
+
   const Camera &getCamera() const { return camera; }
   Camera &getCamera() { return camera; }
 
@@ -202,6 +220,12 @@ public:
 
 
 private:
+  struct Instance {
+    uint32_t meshId;      // UINT32_MAX means non-mesh primitive
+    Geometry *object;     // instance payload used by current traversal
+    BoundingBox bounds;   // world-space bounds (TLAS primitive)
+  };
+
   /* Do not try to access these members directly. If you need to iterate
      over e.g. lights, use the following loop:
 
@@ -215,6 +239,9 @@ private:
   std::vector<Geometry *> objects;
   std::vector<Geometry *> bvhObjects;
   std::vector<Geometry *> nonBvhObjects;
+  std::vector<Instance> instances;
+  std::vector<Trimesh *> meshBlas;
+  std::unordered_map<Trimesh *, uint32_t> meshToBlasId;
   std::vector<Light *> lights;
   Camera camera;
 

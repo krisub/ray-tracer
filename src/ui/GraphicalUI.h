@@ -38,6 +38,7 @@ public:
   Fl_Slider *m_sizeSlider;
   Fl_Slider *m_depthSlider;
   Fl_Slider *m_thresholdSlider;
+  /*Fl_Slider *m_rayTermThresholdSlider;*/ // TEST THIS LATER
   Fl_Slider *m_blockSlider;
   Fl_Slider *m_aaSamplesSlider;
   Fl_Slider *m_aaThreshSlider;
@@ -97,6 +98,7 @@ private:
   static void cb_sizeSlides(Fl_Widget *o, void *v);
   static void cb_depthSlides(Fl_Widget *o, void *v);
   static void cb_thresholdSlides(Fl_Widget *o, void *v);
+  /*static void cb_rayTermThresholdSlides(Fl_Widget *o, void *v);*/ // TEST THIS LATER
   static void cb_blockSlides(Fl_Widget *o, void *v);
   static void cb_aaSamplesSlides(Fl_Widget *o, void *v);
   static void cb_aaThresholdSlides(Fl_Widget *o, void *v);

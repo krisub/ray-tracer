@@ -40,12 +40,14 @@ public:
   glm::dvec3 getPixel(int i, int j);
   void setPixel(int i, int j, glm::dvec3 color);
   void getBuffer(unsigned char *&buf, int &w, int &h);
+  void getVisualizationBuffer(unsigned char *&buf, int &w, int &h);
   double aspectRatio();
 
   void traceImage(int w, int h);
   int aaImage();
   int aaAdaptiveImage();
   int aaFastApproxImage();
+  int aaStochasticImage();
   bool checkRender();
   void waitRender();
 
@@ -87,6 +89,7 @@ private:
                                    const glm::dvec3 &thresh, int depth,
                                    glm::dvec3 &colorC,
                                    const std::vector<const SceneObject *> &objStack);
+  static glm::dvec3 integratedEmissiveAlongPath(const glm::dvec3 &Le, const glm::dvec3 &Kt, double t);
   double averageIorFromObjects(
       const std::vector<const SceneObject *> &objStack,
       const isect &i) const;
@@ -99,10 +102,15 @@ private:
     int maxDepth, const glm::dvec3 &cTL,
     const glm::dvec3 &cTR, const glm::dvec3 &cBL,
     const glm::dvec3 &cBR);
+  std::pair<glm::dvec3, int> aaARecurseWithCount(double x, double y, double w,
+    double h, int depth, int maxDepth, const glm::dvec3 &cTL,
+    const glm::dvec3 &cTR, const glm::dvec3 &cBL,
+    const glm::dvec3 &cBR);
 
   std::unique_ptr<Scene> scene;
   std::vector<unsigned char> buffer;
-  double thresh;
+  double rayTermThresh;    // adaptive ray termination (0=off)
+  double blockInterpThresh; // block interpolation (0=off)
   int buffer_width, buffer_height;
   bool m_bBufferReady;
 
@@ -114,8 +122,10 @@ private:
 
   bool tir;           // total internal reflection
   bool handleOverlap; // for multiple overlapping transparent objects
+  bool aaVisualize;   // output ray-count visualization for adaptive AA
+  bool goopEnabled;   // translucent emissive: integrate emission along path
 
-
+  std::vector<unsigned char> aaVisBuffer;
 };
 
 #endif // __RAYTRACER_H__

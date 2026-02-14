@@ -34,6 +34,12 @@ ENDIF(NOT src)
 
 add_executable(ray ${src})
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(ray PRIVATE
+    $<$<CONFIG:Release>:-O3 -mavx2 -mfma>
+  )
+endif()
+
 find_package(OpenMP REQUIRED)
 if(OpenMP_CXX_FOUND)
 	target_link_libraries(ray OpenMP::OpenMP_CXX)

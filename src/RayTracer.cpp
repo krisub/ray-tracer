@@ -3,6 +3,7 @@
 #pragma warning(disable : 4786)
 
 #include "RayTracer.h"
+#include "interp.h"
 #include "scene/light.h"
 #include "scene/material.h"
 #include "scene/ray.h"
@@ -23,6 +24,8 @@
 
 #include <fstream>
 #include <iostream>
+#include <random>
+#include <utility>
 
 using namespace std;
 extern TraceUI *traceUI;
@@ -54,13 +57,38 @@ RayTracer::computeRefractionDirection(const glm::dvec3 &incidentDir,
          (iorRatio * cosIncident + cosTransmitted) * surfaceNormal;
 }
 
+// emission integrated along path [0,t]: int_0^t Le * Kt^(t-s) ds = Le * (Kt^t - 1)/ln(Kt); limit Le*t as Kt->1.
+glm::dvec3 RayTracer::integratedEmissiveAlongPath(const glm::dvec3 &Le,
+                                                  const glm::dvec3 &Kt,
+                                                  double t) {
+  if (t <= 0.0)
+    return glm::dvec3(0.0, 0.0, 0.0);
+  glm::dvec3 out(0.0, 0.0, 0.0);
+  const double eps = 1e-6;
+  for (int c = 0; c < 3; ++c) {
+    double ktc = Kt[c], lec = Le[c];
+    if (lec < eps)
+      continue;
+    if (ktc < eps)
+      out[c] = 0.0;
+    else if (ktc >= 1.0 - eps)
+      out[c] = lec * t;
+    else
+      out[c] = lec * (std::pow(ktc, t) - 1.0) / std::log(ktc);
+  }
+  return out;
+}
+
 void RayTracer::accumulateReflection(ray &r, const isect &i,
                                      const glm::dvec3 &Kr,
                                      const glm::dvec3 &thresh, int depth,
                                      glm::dvec3 &colorC) {
+  // adaptive termination: skip reflection when max(Kr) < thresh (thresh=0 disables)
+  if (thresh.x > 0 && std::max({Kr.x, Kr.y, Kr.z}) < thresh.x)
+    return;
   if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
-    glm::dvec3 rayDir = glm::normalize(r.getDirection());
-    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    const glm::dvec3 &rayDir = r.getDirection();   // already unit (camera/reflect/refract)
+    const glm::dvec3 &surfaceNormal = i.getN();    // already unit (intersection code)
     glm::dvec3 reflectDir = computeReflectionDirection(rayDir, surfaceNormal);
 
     ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
@@ -75,9 +103,12 @@ void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
                                      const glm::dvec3 &Kt,
                                      const glm::dvec3 &thresh, int depth,
                                      glm::dvec3 &colorC) {
+  // adaptive termination: skip refraction when max(Kt) < thresh (thresh=0 disables)
+  if (thresh.x > 0 && std::max({Kt.x, Kt.y, Kt.z}) < thresh.x)
+    return;
   if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
-    glm::dvec3 rayDir = glm::normalize(r.getDirection());
-    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    const glm::dvec3 &rayDir = r.getDirection();
+    const glm::dvec3 &surfaceNormal = i.getN();
     double indexOfRefraction = m.index(i);
 
     double cosIncidence = glm::dot(surfaceNormal, rayDir);
@@ -105,8 +136,12 @@ void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
       if (cosIncidence < 0)
         incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
       colorC += incomingLight;
+      if (goopEnabled && cosIncidence < 0) {
+        glm::dvec3 Le = m.ke(i);
+        if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+          colorC += integratedEmissiveAlongPath(Le, Kt, t_val);
+      }
     } else {
-      // TODO: add flag to enable TIR
       if (tir) {
         glm::dvec3 reflectDir =
             computeReflectionDirection(rayDir, normalForRefraction);
@@ -119,6 +154,11 @@ void RayTracer::accumulateRefraction(ray &r, const isect &i, const Material &m,
             traceRay(reflectedRay, thresh, depth - 1, t_val);
         incomingLight *= glm::pow(Kt, glm::dvec3(t_val, t_val, t_val));
         colorC += incomingLight;
+        if (goopEnabled) {
+          glm::dvec3 Le = m.ke(i);
+          if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+            colorC += integratedEmissiveAlongPath(Le, Kt, t_val);
+        }
       }
     }
   }
@@ -152,9 +192,11 @@ void RayTracer::accumulateReflectionOverlap(
     ray &r, const isect &i, const glm::dvec3 &Kr, const glm::dvec3 &thresh,
     int depth, glm::dvec3 &colorC,
     const std::vector<const SceneObject *> &objStack) {
+  if (thresh.x > 0 && std::max({Kr.x, Kr.y, Kr.z}) < thresh.x)
+    return;
   if (Kr.x > 0 || Kr.y > 0 || Kr.z > 0) {
-    glm::dvec3 rayDir = glm::normalize(r.getDirection());
-    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    const glm::dvec3 &rayDir = r.getDirection();
+    const glm::dvec3 &surfaceNormal = i.getN();
     glm::dvec3 reflectDir = computeReflectionDirection(rayDir, surfaceNormal);
 
     ray reflectedRay(r.at(i) + reflectDir * RAY_EPSILON, reflectDir,
@@ -170,9 +212,11 @@ void RayTracer::accumulateRefractionOverlap(
     ray &r, const isect &i, const Material &m, const glm::dvec3 &Kt,
     const glm::dvec3 &thresh, int depth, glm::dvec3 &colorC,
     const std::vector<const SceneObject *> &objStack) {
+  if (thresh.x > 0 && std::max({Kt.x, Kt.y, Kt.z}) < thresh.x)
+    return;
   if (Kt.x > 0 || Kt.y > 0 || Kt.z > 0) {
-    glm::dvec3 rayDir = glm::normalize(r.getDirection());
-    glm::dvec3 surfaceNormal = glm::normalize(i.getN());
+    const glm::dvec3 &rayDir = r.getDirection();
+    const glm::dvec3 &surfaceNormal = i.getN();
     std::vector<const SceneObject *> nextObjStack = objStack;
 
     const SceneObject *hitObject = i.getObject();
@@ -217,6 +261,12 @@ void RayTracer::accumulateRefractionOverlap(
       glm::dvec3 attenKt = averageKtFromObjects(nextObjStack, i);
       incomingLight *= glm::pow(attenKt, glm::dvec3(t_val, t_val, t_val));
       colorC += incomingLight;
+      if (goopEnabled && !foundInStack) {
+        glm::dvec3 Le = m.ke(i);
+        glm::dvec3 KtObj = m.kt(i);
+        if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+          colorC += integratedEmissiveAlongPath(Le, KtObj, t_val);
+      }
     } else {
       if (tir) {
         glm::dvec3 reflectDir =
@@ -231,6 +281,12 @@ void RayTracer::accumulateRefractionOverlap(
         glm::dvec3 attenKt = averageKtFromObjects(objStack, i);
         incomingLight *= glm::pow(attenKt, glm::dvec3(t_val, t_val, t_val));
         colorC += incomingLight;
+        if (goopEnabled) {
+          glm::dvec3 Le = m.ke(i);
+          glm::dvec3 KtObj = m.kt(i);
+          if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+            colorC += integratedEmissiveAlongPath(Le, KtObj, t_val);
+        }
       }
     }
   }
@@ -296,8 +352,12 @@ glm::dvec3 RayTracer::trace(double x, double y) {
         ray::VISIBILITY);
   scene->getCamera().rayThrough(x, y, r);
   double dummy;
+  // Pass adaptive termination threshold: skip reflection/refraction when
+  // max(Kr) or max(Kt) < rayTermThresh (0 = disabled)
+  const double adaptThresh = rayTermThresh;
   glm::dvec3 ret =
-      traceRay(r, glm::dvec3(1.0, 1.0, 1.0), traceUI->getDepth(), dummy);
+      traceRay(r, glm::dvec3(adaptThresh, adaptThresh, adaptThresh),
+               traceUI->getDepth(), dummy);
   ret = glm::clamp(ret, 0.0, 1.0);
   return ret;
 }
@@ -387,8 +447,9 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 }
 
 RayTracer::RayTracer()
-    : scene(nullptr), buffer(0), thresh(0), buffer_width(0), buffer_height(0),
-      m_bBufferReady(false) {}
+    : scene(nullptr), buffer(0), rayTermThresh(0), blockInterpThresh(0),
+    buffer_width(0), buffer_height(0),
+      m_bBufferReady(false), goopEnabled(false) {}
 
 RayTracer::~RayTracer() {}
 
@@ -396,6 +457,12 @@ void RayTracer::getBuffer(unsigned char *&buf, int &w, int &h) {
   buf = buffer.data();
   w = buffer_width;
   h = buffer_height;
+}
+
+void RayTracer::getVisualizationBuffer(unsigned char *&buf, int &w, int &h) {
+  buf = aaVisBuffer.empty() ? nullptr : aaVisBuffer.data();
+  w = aaVisBuffer.empty() ? 0 : buffer_width;
+  h = aaVisBuffer.empty() ? 0 : buffer_height;
 }
 
 double RayTracer::aspectRatio() {
@@ -489,11 +556,19 @@ void RayTracer::traceSetup(int w, int h) {
 
   threads = traceUI->getThreads();
   block_size = traceUI->getBlockSize();
-  thresh = traceUI->getThreshold();
+  rayTermThresh = traceUI->getRayTermThreshold();
+  blockInterpThresh = traceUI->getThreshold();
   samples = traceUI->getSuperSamples();
   aaThresh = traceUI->getAaThreshold();
   tir = traceUI->getTotalInternalReflection();
   handleOverlap = traceUI->getHandleOverlap();
+  aaVisualize = traceUI->aaVisualize();
+  goopEnabled = traceUI->getGoop();
+  if (aaVisualize) {
+    aaVisBuffer.resize(buffer_width * buffer_height * 3);
+    std::fill(aaVisBuffer.begin(), aaVisBuffer.end(),
+              static_cast<unsigned char>(0));
+  }
 
   // YOUR CODE HERE
   // FIXME: Additional initializations
@@ -529,6 +604,7 @@ void RayTracer::traceImage(int w, int h) {
   const int tileSize = std::max(1, block_size);
   const int tilesX = (w + tileSize - 1) / tileSize;
   const int tilesY = (h + tileSize - 1) / tileSize;
+  const bool useBlockInterp = (blockInterpThresh > 0);
 
 #pragma omp parallel for collapse(2) schedule(dynamic, 1)
   for (int ty = 0; ty < tilesY; ++ty) {
@@ -540,6 +616,53 @@ void RayTracer::traceImage(int w, int h) {
       const int y0 = ty * tileSize;
       const int x1 = std::min(x0 + tileSize, w);
       const int y1 = std::min(y0 + tileSize, h);
+
+      if (useBlockInterp && (x1 - x0) >= 2 && (y1 - y0) >= 2) {
+        // block interpolation
+        const int ixR = x1 - 1;
+        const int jyB = y1 - 1;
+        const double invW = 1.0 / static_cast<double>(buffer_width);
+        const double invH = 1.0 / static_cast<double>(buffer_height);
+
+        glm::dvec3 cTL = glm::clamp(trace((x0 + 0.5) * invW, (y0 + 0.5) * invH),
+                                    0.0, 1.0);
+        glm::dvec3 cTR = glm::clamp(trace((ixR + 0.5) * invW, (y0 + 0.5) * invH),
+                                    0.0, 1.0);
+        glm::dvec3 cBL = glm::clamp(trace((x0 + 0.5) * invW, (jyB + 0.5) * invH),
+                                    0.0, 1.0);
+        glm::dvec3 cBR =
+            glm::clamp(trace((ixR + 0.5) * invW, (jyB + 0.5) * invH),
+                       0.0, 1.0);
+
+        double maxDiff = 0.0;
+        for (int c = 0; c < 3; ++c) {
+          double lo = std::min({cTL[c], cTR[c], cBL[c], cBR[c]});
+          double hi = std::max({cTL[c], cTR[c], cBL[c], cBR[c]});
+          maxDiff = std::max(maxDiff, hi - lo);
+        }
+
+        if (maxDiff <= blockInterpThresh) {
+          // Interpolate interior
+          const double denomX = std::max(1, ixR - x0);
+          const double denomY = std::max(1, jyB - y0);
+          for (int j = y0; j < y1; ++j) {
+            if (stopTrace.load(std::memory_order_acquire))
+              break;
+            const double ty = (j - y0) / denomY;
+            for (int i = x0; i < x1; ++i) {
+              const double tx = (i - x0) / denomX;
+              glm::dvec3 col = (1.0 - tx) * (1.0 - ty) * cTL +
+                               tx * (1.0 - ty) * cTR +
+                               (1.0 - tx) * ty * cBL + tx * ty * cBR;
+              unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+              pixel[0] = static_cast<unsigned char>(255.0 * col[0]);
+              pixel[1] = static_cast<unsigned char>(255.0 * col[1]);
+              pixel[2] = static_cast<unsigned char>(255.0 * col[2]);
+            }
+          }
+          continue;
+        }
+      }
 
       for (int j = y0; j < y1; ++j) {
         if (stopTrace.load(std::memory_order_acquire))
@@ -615,6 +738,75 @@ int RayTracer::aaImage() {
   return 0;
 }
 
+int RayTracer::aaStochasticImage() {
+  if (threads > 0)
+    omp_set_num_threads(threads);
+
+  const int tileSize = std::max(1, block_size);
+  const int tilesX = (buffer_width + tileSize - 1) / tileSize;
+  const int tilesY = (buffer_height + tileSize - 1) / tileSize;
+
+  // seed from (i,j,p,q,dim)
+  auto jitterCoord = [](int i, int j, int p, int q, int dim) -> double {
+    unsigned seed =
+        static_cast<unsigned>(i) * 31u * 31u * 31u * 31u +
+        static_cast<unsigned>(j) * 31u * 31u * 31u +
+        static_cast<unsigned>(p) * 31u * 31u +
+        static_cast<unsigned>(q) * 31u +
+        static_cast<unsigned>(dim);
+    std::minstd_rand gen(seed);
+    std::uniform_real_distribution<double> dis(0.0, 1.0);
+    return dis(gen);
+  };
+
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+  for (int ty = 0; ty < tilesY; ++ty) {
+    for (int tx = 0; tx < tilesX; ++tx) {
+      if (stopTrace.load(std::memory_order_acquire))
+        continue;
+
+      const int x0 = tx * tileSize;
+      const int y0 = ty * tileSize;
+      const int x1 = std::min(x0 + tileSize, buffer_width);
+      const int y1 = std::min(y0 + tileSize, buffer_height);
+
+      for (int j = y0; j < y1; ++j) {
+        if (stopTrace.load(std::memory_order_acquire))
+          break;
+        for (int i = x0; i < x1; ++i) {
+          glm::dvec3 col(0, 0, 0);
+          int gridSize = samples;
+
+          if (gridSize < 1)
+            gridSize = 1;
+
+          for (int p = 0; p < gridSize; ++p) {
+            for (int q = 0; q < gridSize; ++q) {
+              double jx = jitterCoord(i, j, p, q, 0);
+              double jy = jitterCoord(i, j, p, q, 1);
+              double offsetX = (double(p) + jx) / double(gridSize);
+              double offsetY = (double(q) + jy) / double(gridSize);
+              double x = (double(i) + offsetX) / double(buffer_width);
+              double y = (double(j) + offsetY) / double(buffer_height);
+
+              col += trace(x, y);
+            }
+          }
+
+          col /= double(gridSize * gridSize);
+          col = glm::clamp(col, 0.0, 1.0);
+
+          unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
+          pixel[0] = (int)(255.0 * col[0]);
+          pixel[1] = (int)(255.0 * col[1]);
+          pixel[2] = (int)(255.0 * col[2]);
+        }
+      }
+    }
+  }
+  return 0;
+}
+
 glm::dvec3 RayTracer::aaARecurse(double x, double y, double w, double h,
                                  int depth, int maxDepth, const glm::dvec3 &cTL,
                                  const glm::dvec3 &cTR, const glm::dvec3 &cBL,
@@ -664,6 +856,55 @@ glm::dvec3 RayTracer::aaARecurse(double x, double y, double w, double h,
   return (q1 + q2 + q3 + q4) * 0.25;
 }
 
+std::pair<glm::dvec3, int> RayTracer::aaARecurseWithCount(
+    double x, double y, double w, double h, int depth, int maxDepth,
+    const glm::dvec3 &cTL, const glm::dvec3 &cTR, const glm::dvec3 &cBL,
+    const glm::dvec3 &cBR) {
+  double halfW = w * 0.5;
+  double halfH = h * 0.5;
+
+  glm::dvec3 cCenter = trace((x + halfW) / double(buffer_width),
+                             (y + halfH) / double(buffer_height));
+  int count = 1;
+
+  if (depth >= maxDepth) {
+    return {(cTL + cTR + cBL + cBR + cCenter) * 0.2, count};
+  }
+
+  double d1 = glm::length(cTL - cCenter);
+  double d2 = glm::length(cTR - cCenter);
+  double d3 = glm::length(cBL - cCenter);
+  double d4 = glm::length(cBR - cCenter);
+
+  if (d1 <= aaThresh && d2 <= aaThresh && d3 <= aaThresh && d4 <= aaThresh) {
+    return {(cTL + cTR + cBL + cBR + cCenter) * 0.2, count};
+  }
+
+  glm::dvec3 cTop =
+      trace((x + halfW) / double(buffer_width), y / double(buffer_height));
+  glm::dvec3 cBottom = trace((x + halfW) / double(buffer_width),
+                             (y + h) / double(buffer_height));
+  glm::dvec3 cLeft =
+      trace(x / double(buffer_width), (y + halfH) / double(buffer_height));
+  glm::dvec3 cRight = trace((x + w) / double(buffer_width),
+                            (y + halfH) / double(buffer_height));
+  count += 4;
+
+  auto [q1, c1] =
+      aaARecurseWithCount(x, y, halfW, halfH, depth + 1, maxDepth,
+                          cTL, cTop, cLeft, cCenter);
+  auto [q2, c2] = aaARecurseWithCount(x + halfW, y, halfW, halfH, depth + 1,
+                                      maxDepth, cTop, cTR, cCenter, cRight);
+  auto [q3, c3] = aaARecurseWithCount(x, y + halfH, halfW, halfH, depth + 1,
+                                      maxDepth, cLeft, cCenter, cBL, cBottom);
+  auto [q4, c4] = aaARecurseWithCount(x + halfW, y + halfH, halfW, halfH,
+                                      depth + 1, maxDepth, cCenter, cRight,
+                                      cBottom, cBR);
+  count += c1 + c2 + c3 + c4;
+
+  return {(q1 + q2 + q3 + q4) * 0.25, count};
+}
+
 int RayTracer::aaAdaptiveImage() {
   if (threads > 0)
     omp_set_num_threads(threads);
@@ -707,8 +948,23 @@ int RayTracer::aaAdaptiveImage() {
           if (maxDepth > 5)
             maxDepth = 5;
 
-          glm::dvec3 col =
-              aaARecurse(x, y, w, h, 0, maxDepth, cTL, cTR, cBL, cBR);
+          glm::dvec3 col;
+          int rayCount = 4;
+          if (aaVisualize) {
+            auto [c, cnt] =
+                aaARecurseWithCount(x, y, w, h, 0, maxDepth, cTL, cTR, cBL, cBR);
+            col = c;
+            rayCount += cnt;
+            int idx = (i + j * buffer_width) * 3;
+            if (idx + 2 < static_cast<int>(aaVisBuffer.size())) {
+              double t = std::min(1.0, double(rayCount) / 150.0);
+              unsigned char val = static_cast<unsigned char>(255.0 * t);
+              aaVisBuffer[idx] = aaVisBuffer[idx + 1] = aaVisBuffer[idx + 2] =
+                  val;
+            }
+          } else {
+            col = aaARecurse(x, y, w, h, 0, maxDepth, cTL, cTR, cBL, cBR);
+          }
 
           col = glm::clamp(col, 0.0, 1.0);
           unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
@@ -755,15 +1011,7 @@ int RayTracer::aaFastApproxImage() {
     glm::dvec3 c01 = fetchColor(x0, y1);
     glm::dvec3 c11 = fetchColor(x1, y1);
 
-    glm::dvec3 c0 = c00 * (1.0 - tx) + c10 * tx;
-    glm::dvec3 c1 = c01 * (1.0 - tx) + c11 * tx;
-    return c0 * (1.0 - ty) + c1 * ty;
-  };
-
-  // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.601-7-201103-I!!PDF-E.pdf,
-  // section 2.5.1
-  auto luminance = [](const glm::dvec3 &c) -> double {
-    return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    return interp::bilerp(c00, c10, c01, c11, tx, ty);
   };
 
   double contrastThreshold = 1.0 / 255.0;
@@ -796,11 +1044,11 @@ int RayTracer::aaFastApproxImage() {
           glm::dvec3 cE = fetchColor(i + 1, j);
           glm::dvec3 cW = fetchColor(i - 1, j);
 
-          double lC = luminance(c);
-          double lN = luminance(cN);
-          double lS = luminance(cS);
-          double lE = luminance(cE);
-          double lW = luminance(cW);
+          double lC = interp::luminance601(c);
+          double lN = interp::luminance601(cN);
+          double lS = interp::luminance601(cS);
+          double lE = interp::luminance601(cE);
+          double lW = interp::luminance601(cW);
 
           double lumaMin =
               std::min(lC, std::min(std::min(lN, lS), std::min(lE, lW)));

@@ -1,5 +1,7 @@
 #include <cmath>
+#include <cstdint>
 
+#include "../SceneObjects/trimesh.h"
 #include "../ui/TraceUI.h"
 #include "bvh.h"
 #include "kdTree.h"
@@ -125,6 +127,23 @@ void Scene::add(Geometry *obj) {
     nonBvhObjects.emplace_back(obj);
   }
   objects.emplace_back(obj);
+
+  Instance instance;
+  instance.meshId = UINT32_MAX;
+  instance.object = obj;
+  instance.bounds = obj->getBoundingBox();
+  if (auto *mesh = dynamic_cast<Trimesh *>(obj)) {
+    auto it = meshToBlasId.find(mesh);
+    if (it == meshToBlasId.end()) {
+      const uint32_t newId = static_cast<uint32_t>(meshBlas.size());
+      meshBlas.emplace_back(mesh);
+      meshToBlasId.emplace(mesh, newId);
+      instance.meshId = newId;
+    } else {
+      instance.meshId = it->second;
+    }
+  }
+  instances.emplace_back(instance);
   bvhDirty = true;
 }
 
@@ -143,6 +162,11 @@ void Scene::rebuildBvhIfNeeded() const {
 
   if (!bvh) {
     bvh = std::make_unique<Bvh>();
+  }
+  if (traceUI && traceUI->tlasAccelMode() == TraceUI::AccelMode::Wide8) {
+    bvh->setLayoutMode(Bvh::LayoutMode::Wide8);
+  } else {
+    bvh->setLayoutMode(Bvh::LayoutMode::Binary);
   }
   bvh->build(bvhObjects);
   bvhDirty = false;
@@ -202,4 +226,18 @@ TextureMap *Scene::getTexture(string name) {
     return textureCache[name].get();
   }
   return itr->second.get();
+}
+
+std::vector<SceneObject *> Scene::getEmissiveObjects() const {
+  std::vector<SceneObject *> out;
+  isect dummy;
+  for (Geometry *g : objects) {
+    SceneObject *so = dynamic_cast<SceneObject *>(g);
+    if (!so)
+      continue;
+    const glm::dvec3 ke = so->getMaterial().ke(dummy);
+    if (ke.x > 1e-9 || ke.y > 1e-9 || ke.z > 1e-9)
+      out.push_back(so);
+  }
+  return out;
 }

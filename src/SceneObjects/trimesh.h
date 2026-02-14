@@ -3,6 +3,7 @@
 
 #include <list>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -40,13 +41,33 @@ class Trimesh : public SceneObject {
     uint32_t count = 0;
   };
 
+  struct alignas(64) FaceBvh8Node {
+    float minX[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    float minY[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    float minZ[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    float maxX[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    float maxY[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    float maxZ[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint32_t childNode[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint32_t first[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint32_t count[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t childCount = 0;
+    uint8_t leafMask = 0;
+  };
+
   mutable std::vector<uint32_t> faceIndices;
   mutable std::vector<FaceBvhNode> faceBvhNodes;
+  mutable std::vector<FaceBvh8Node> faceBvh8Nodes;
   mutable bool faceBvhDirty = true;
   mutable std::mutex faceBvhBuildMutex;
 
   void rebuildFaceBvhIfNeeded() const;
   uint32_t buildFaceBvhRecursive(uint32_t begin, uint32_t end) const;
+  bool isFaceBinaryLeaf(uint32_t idx) const;
+  uint32_t buildWide8FromBinary(uint32_t binaryRoot) const;
+  void buildWide8() const;
+  bool intersectWide8(ray &r, isect &i) const;
+  bool intersectBinary(ray &r, isect &i) const;
 
 public:
   Trimesh(Scene *scene, Material *mat, MatrixTransform transform)
@@ -111,6 +132,9 @@ Trimesh object. */
 class TrimeshFace {
   Trimesh *parent;
   int ids[3];
+  glm::dvec3 v0;
+  glm::dvec3 e1;
+  glm::dvec3 e2;
   glm::dvec3 normal;
   double dist;
   BoundingBox bounds;
@@ -123,12 +147,15 @@ public:
     ids[2] = c;
 
     // Compute the face normal here, not on the fly
-    glm::dvec3 a_coords = parent->vertices[a];
-    glm::dvec3 b_coords = parent->vertices[b];
-    glm::dvec3 c_coords = parent->vertices[c];
+    const glm::dvec3 a_coords = parent->vertices[a];
+    const glm::dvec3 b_coords = parent->vertices[b];
+    const glm::dvec3 c_coords = parent->vertices[c];
 
-    glm::dvec3 vab = (b_coords - a_coords);
-    glm::dvec3 vac = (c_coords - a_coords);
+    v0 = a_coords;
+    e1 = b_coords - a_coords;
+    e2 = c_coords - a_coords;
+    glm::dvec3 vab = e1;
+    glm::dvec3 vac = e2;
     glm::dvec3 vcb = (b_coords - c_coords);
 
     if (glm::length(vab) == 0.0 || glm::length(vac) == 0.0 ||
@@ -136,7 +163,7 @@ public:
       degen = true;
     else {
       degen = false;
-      normal = glm::cross(b_coords - a_coords, c_coords - a_coords);
+      normal = glm::cross(e1, e2);
       normal = glm::normalize(normal);
       dist = glm::dot(normal, a_coords);
     }
@@ -152,7 +179,7 @@ public:
   glm::dvec3 getNormal() { return normal; }
 
   bool intersect(ray &r, isect &i) const;
-  bool intersectLocal(ray &r, isect &i) const;
+  bool intersectLocal(ray &r, isect &i, double bestT = std::numeric_limits<double>::infinity()) const;
   Trimesh *getParent() const { return parent; }
 
   bool hasBoundingBoxCapability() const { return true; }

@@ -141,6 +141,11 @@ void GraphicalUI::cb_thresholdSlides(Fl_Widget *o, void *) {
       int(((Fl_Slider *)o)->value());
 }
 
+/*void GraphicalUI::cb_rayTermThresholdSlides(Fl_Widget *o, void *) {
+  ((GraphicalUI *)(o->user_data()))->m_nRayTermThresh =
+      int(((Fl_Slider *)o)->value());
+}*/ // TEST THIS LATER
+
 void GraphicalUI::cb_blockSlides(Fl_Widget *o, void *) {
   ((GraphicalUI *)(o->user_data()))->m_nBlockSize =
       int(((Fl_Slider *)o)->value());
@@ -517,8 +522,23 @@ GraphicalUI::GraphicalUI() : refreshInterval(10) {
   m_thresholdSlider->align(FL_ALIGN_RIGHT);
   m_thresholdSlider->callback(cb_thresholdSlides);
 
+  // install ray termination threshold slider
+  /*
+  m_rayTermThresholdSlider =
+      new Fl_Value_Slider(10, 115, 180, 20, "Ray Term. (x 0.001)");
+  m_rayTermThresholdSlider->user_data((void *)(this));
+  m_rayTermThresholdSlider->type(FL_HOR_NICE_SLIDER);
+  m_rayTermThresholdSlider->labelfont(FL_COURIER);
+  m_rayTermThresholdSlider->labelsize(12);
+  m_rayTermThresholdSlider->minimum(0);
+  m_rayTermThresholdSlider->maximum(1000);
+  m_rayTermThresholdSlider->step(1);
+  m_rayTermThresholdSlider->value(m_nRayTermThresh);
+  m_rayTermThresholdSlider->align(FL_ALIGN_RIGHT);
+  m_rayTermThresholdSlider->callback(cb_rayTermThresholdSlides);*/ // TEST THIS LATER
+
   // install size slider
-  m_sizeSlider = new Fl_Value_Slider(10, 115, 180, 20, "Screen Size");
+  /*m_sizeSlider = new Fl_Value_Slider(10, 140, 180, 20, "Screen Size");*/ // TEST THIS LATER
   m_sizeSlider->user_data((void *)(this)); // record self to be used by
                                            // static callback functions
   m_sizeSlider->type(FL_HOR_NICE_SLIDER);
@@ -532,8 +552,8 @@ GraphicalUI::GraphicalUI() : refreshInterval(10) {
   m_sizeSlider->callback(cb_sizeSlides);
 
   // install refresh interval slider
-  m_refreshSlider = new Fl_Value_Slider(10, 140, 180, 20,
-                                        "Screen Refresh Interval (0.1 sec)");
+  /*m_refreshSlider = new Fl_Value_Slider(10, 165, 180, 20,
+                                        "Screen Refresh Interval (0.1 sec)");*/ // TEST THIS LATER
   m_refreshSlider->user_data((void *)(this)); // record self to be used by
                                               // static callback functions
   m_refreshSlider->type(FL_HOR_NICE_SLIDER);
@@ -547,7 +567,7 @@ GraphicalUI::GraphicalUI() : refreshInterval(10) {
   m_refreshSlider->callback(cb_refreshSlides);
 
   // install threads slider
-  m_refreshSlider = new Fl_Value_Slider(10, 165, 180, 20, "Threads");
+  /*m_refreshSlider = new Fl_Value_Slider(10, 190, 180, 20, "Threads");*/ // TEST THIS LATER
   m_refreshSlider->user_data((void *)(this)); // record self to be used by
                                               // static callback functions
   m_refreshSlider->type(FL_HOR_NICE_SLIDER);

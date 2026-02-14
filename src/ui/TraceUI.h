@@ -18,6 +18,8 @@ class CubeMap;
 
 class TraceUI {
 public:
+  enum class AccelMode { Binary, Wide8 };
+
   TraceUI();
   virtual ~TraceUI();
 
@@ -35,6 +37,7 @@ public:
   int getDepth() const { return m_nDepth; }
   int getBlockSize() const { return m_nBlockSize; }
   double getThreshold() const { return (double)m_nThreshold * 0.001; }
+  double getRayTermThreshold() const { return (double)m_nRayTermThresh * 0.001; }
   double getAaThreshold() const { return (double)m_nAaThreshold * 0.001; }
   int getSuperSamples() const { return m_nSuperSamples; }
   int getMaxDepth() const { return m_nTreeDepth; }
@@ -42,12 +45,16 @@ public:
   int getFilterWidth() const { return m_nFilterWidth; }
   int getThreads() const { return m_threads; }
   bool aaSwitch() const { return m_antiAlias; }
+  bool aaVisualize() const { return m_aaVisualize; }
   bool kdSwitch() const { return m_kdTree; }
+  // Backward-compatible alias for old single accel toggle.
+  AccelMode accelMode() const { return m_tlasAccelMode; }
+  AccelMode tlasAccelMode() const { return m_tlasAccelMode; }
+  AccelMode blasAccelMode() const { return m_blasAccelMode; }
   bool shadowSw() const { return m_shadows; }
   bool smShadSw() const { return m_smoothshade; }
   bool bkFaceSw() const {
-    return false;
-    // return m_backface;
+    return m_backface;
   }
   bool cubeMap() const { return m_usingCubeMap && cubemap; }
   CubeMap *getCubeMap() const { return cubemap.get(); }
@@ -58,6 +65,8 @@ public:
   // added by me:
   bool getTotalInternalReflection() const { return m_totalInternalReflection; }
   bool getHandleOverlap() const { return m_handleOverlap; }
+  bool sincTexture() const { return m_sincTexture; }
+  bool getGoop() const { return m_goop; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -102,7 +111,8 @@ protected:
 
   int m_nSize = 512;        // Size of the traced image
   int m_nDepth = 0;         // Max depth of recursion
-  int m_nThreshold = 0;     // Threshold for interpolation within block
+  int m_nThreshold = 0;       // Block interpolation: interpolate when corner variance < thresh*0.001 (0=off)
+  int m_nRayTermThresh = 0;   // Adaptive ray termination: skip reflect/refract when max(Kr/Kt) < thresh*0.001 (0=off)
   int m_nBlockSize = 32; // 4;     // Blocksize (square, even, power of 2 preferred)
   int m_nSuperSamples = 3;  // Supersampling rate (1-d) for antialiasing
   int m_nAaThreshold = 100; // Pixel neighborhood difference for supersampling
@@ -130,8 +140,14 @@ protected:
   // added by me
   bool m_totalInternalReflection = false;
   bool m_antialiasingAdaptive = false;
+  bool m_antialiasingStochastic = false;
   bool m_fxAntialiasing = false;
+  bool m_aaVisualize = false;
   bool m_handleOverlap = false;
+  bool m_sincTexture = false;
+  bool m_goop = false;  // translucent emissive "radioactive goop" along path
+  AccelMode m_tlasAccelMode = AccelMode::Binary;
+  AccelMode m_blasAccelMode = AccelMode::Binary;
 
   std::unique_ptr<CubeMap> cubemap;
 

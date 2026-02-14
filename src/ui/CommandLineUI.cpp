@@ -13,6 +13,7 @@ extern int getopt(int argc, char **argv, const char *optstring);
 #include <getopt.h>
 
 #include "../fileio/images.h"
+#include <string>
 #include "CommandLineUI.h"
 
 #include "../RayTracer.h"
@@ -32,6 +33,10 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"tir", no_argument, nullptr, 1001},
       {"handle-overlap", no_argument, nullptr, 1002},
       {"fxaa", no_argument, nullptr, 1003},
+      {"stochastic", no_argument, nullptr, 1004},
+      {"aa-visualize", no_argument, nullptr, 1005},
+      {"sinc", no_argument, nullptr, 1006},
+      {"goop", no_argument, nullptr, 1007},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -69,6 +74,18 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       break;
     case 1003: // --fxaa
       m_fxAntialiasing = true;
+      break;
+    case 1004: // --stochastic
+      m_antialiasingStochastic = true;
+      break;
+    case 1005: // --aa-visualize
+      m_aaVisualize = true;
+      break;
+    case 1006: // --sinc
+      m_sincTexture = true;
+      break;
+    case 1007: // --goop
+      m_goop = true;
       break;
     default:
       // Oops; unknown argument
@@ -108,17 +125,17 @@ int CommandLineUI::run() {
 
     raytracer->traceImage(width, height);
     raytracer->waitRender();
-    if (aaSwitch()) { // m_antiAlias
-      if (m_antialiasingAdaptive) {
+    if (aaSwitch()) {
+      if (m_antialiasingStochastic) {
+        raytracer->aaStochasticImage();
+      } else if (m_antialiasingAdaptive) {
         raytracer->aaAdaptiveImage();
-        raytracer->waitRender();
       } else if (m_fxAntialiasing) {
         raytracer->aaFastApproxImage();
-        raytracer->waitRender();
       } else {
         raytracer->aaImage();
-        raytracer->waitRender();
       }
+      raytracer->waitRender();
     }
 
     end = clock();
@@ -130,6 +147,21 @@ int CommandLineUI::run() {
 
     if (buf)
       writeImage(imgName, width, height, buf);
+
+    if (m_aaVisualize && m_antialiasingAdaptive) {
+      unsigned char *visBuf = nullptr;
+      int visW = 0, visH = 0;
+      raytracer->getVisualizationBuffer(visBuf, visW, visH);
+      if (visBuf && visW > 0 && visH > 0) {
+        std::string visName(imgName);
+        size_t dot = visName.find_last_of('.');
+        if (dot != std::string::npos)
+          visName = visName.substr(0, dot) + "_aa_vis" + visName.substr(dot);
+        else
+          visName += "_aa_vis.png";
+        writeImage(visName.c_str(), visW, visH, visBuf);
+      }
+    }
 
     // [[maybe_unused]]
     // double t = (double)(end - start) / CLOCKS_PER_SEC;

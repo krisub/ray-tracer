@@ -18,6 +18,7 @@ from scipy.ndimage import uniform_filter
 from pathlib import Path
 import signal
 import time
+import tempfile
 
 
 def _msg(text, level, color):
@@ -417,10 +418,78 @@ def raycheck(args):
     timedir = os.path.join(args.out, "timing")
     os.makedirs(timedir, exist_ok=True)
     timecsv = os.path.join(timedir, "render_times.csv")
+    reftimecsv = os.path.join(timedir, "render_times_ref.csv")
+    timecsv_raw = os.path.join(timedir, "render_times_raw.csv")
+    reftimecsv_raw = os.path.join(timedir, "render_times_ref_raw.csv")
     
-    if not os.path.exists(timecsv):
-        with open(timecsv, "w") as f:
-            f.write("test-name,seconds\n")
+    # Timing CSV format:
+    # test-name,median,mean,std,min,max,n,warmup
+    #
+    # We also support auto-upgrading the older 2-column format:
+    # test-name,seconds
+    timing_header = "test-name,median,mean,std,min,max,n,warmup\n"
+    timing_header_old = "test-name,seconds\n"
+
+    def ensure_timing_csv(path):
+        if not os.path.exists(path):
+            with open(path, "w") as f:
+                f.write(timing_header)
+            return
+
+        # If it exists, check if we need to upgrade the header/rows.
+        try:
+            with open(path, "r") as f:
+                first = f.readline()
+                rest = f.readlines()
+        except:
+            # If we can't read it for any reason, don't clobber.
+            return
+
+        if first == timing_header:
+            return
+
+        if first != timing_header_old:
+            # Unknown format; leave it untouched.
+            return
+
+        upgraded = [timing_header]
+        for line in rest:
+            line = line.strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 2:
+                continue
+            name = parts[0]
+            try:
+                sec = float(parts[1])
+            except:
+                continue
+
+            # Best-effort conversion: treat the old "seconds" as a single-run
+            # sample, so median=mean=min=max=sec and std=0, n=1, warmup=0.
+            upgraded.append(
+                "{}, {:.6f}, {:.6f}, {:.6f}, {:.6f}, {:.6f}, {}, {}\n".format(
+                    name, sec, sec, 0.0, sec, sec, 1, 0
+                )
+            )
+
+        try:
+            with open(path, "w") as f:
+                f.writelines(upgraded)
+        except:
+            # Don't fail the whole run if upgrading fails.
+            return
+
+    ensure_timing_csv(timecsv)
+    ensure_timing_csv(reftimecsv)
+
+    if not os.path.exists(timecsv_raw):
+        with open(timecsv_raw, "w") as f:
+            f.write("test-name,run-idx,seconds\n")
+    if not os.path.exists(reftimecsv_raw):
+        with open(reftimecsv_raw, "w") as f:
+            f.write("test-name,run-idx,seconds\n")
 
     refcache_dir = (
         os.path.join(args.out, "refcache") if not args.refcache else args.refcache
@@ -472,25 +541,55 @@ def raycheck(args):
             _info("executing: {}".format(" ".join(alist)))
             subprocess.run(alist)
 
+        def time_one(alist, stdout, stderr):
+            # Warm up (not recorded) to reduce cache/first-run noise.
+            for _ in range(max(0, args.time_warmup)):
+                subprocess.run(alist, stdout=stdout, stderr=stderr, timeout=args.timelimit)
+
+            times = []
+            for _ in range(max(1, args.time_runs)):
+                start = time.perf_counter()
+                subprocess.run(alist, stdout=stdout, stderr=stderr, timeout=args.timelimit)
+                end = time.perf_counter()
+                times.append(end - start)
+
+            arr = np.array(times, dtype=np.float64)
+            stats = {
+                "median": float(np.median(arr)),
+                "mean": float(np.mean(arr)),
+                "std": float(np.std(arr)),
+                "min": float(np.min(arr)),
+                "max": float(np.max(arr)),
+                "times": times,
+            }
+            # Use median to be robust against occasional OS jitter.
+            return stats
+
         if args.exec:
             with open(stdoutfn, "w") as stdout, open(stderrfn, "w") as stderr:
                 # alist = [args.exec] + cmd_args + [rayfn, imagefn]
                 alist = [args.exec] + cmd_args + args.custom_args + [rayfn, imagefn]
                 _info("Running command: {}".format(" ".join(alist)))
                 try:
-                    start = time.perf_counter()
-                    subprocess.run(
-                        alist, stdout=stdout, stderr=stderr, timeout=args.timelimit
-                    )
-                    end = time.perf_counter()
-                    elapsed_sec = end - start
+                    stats = time_one(alist, stdout, stderr)
+                    elapsed_sec = stats["median"]
                     
                     with open(timecsv, "a") as tf:
                         tf.write(
-                            "{}, {:.6f}\n".format(
-                                outstem, elapsed_sec
+                            "{}, {:.6f}, {:.6f}, {:.6f}, {:.6f}, {:.6f}, {}, {}\n".format(
+                                outstem,
+                                stats["median"],
+                                stats["mean"],
+                                stats["std"],
+                                stats["min"],
+                                stats["max"],
+                                max(1, args.time_runs),
+                                max(0, args.time_warmup),
                             )
                         )
+                    with open(timecsv_raw, "a") as tf:
+                        for k, t in enumerate(stats["times"]):
+                            tf.write("{}, {}, {:.6f}\n".format(outstem, k, float(t)))
                 
                 except KeyboardInterrupt:
                     raise KeyboardInterrupt
@@ -498,6 +597,43 @@ def raycheck(args):
                     _error(outstem + " Timeout")
                 except:
                     _error(outstem + " (Unknown)")
+
+        if args.refbin and args.time_ref:
+            # Time the reference binary too. Don't overwrite the cached ref image;
+            # write to a separate path in /tmp.
+            reftmp = os.path.join(
+                tempfile.gettempdir(), outstem + ".ref_timing.{}.png".format(os.getpid())
+            )
+            refstdoutfn = os.path.join(args.out, "stdio", outstem + ".ref.out")
+            refstderrfn = os.path.join(args.out, "stdio", outstem + ".ref.err")
+            with open(refstdoutfn, "w") as stdout, open(refstderrfn, "w") as stderr:
+                alist = [args.refbin] + cmd_args + [rayfn, reftmp]
+                _info("Timing reference: {}".format(" ".join(alist)))
+                try:
+                    stats = time_one(alist, stdout, stderr)
+                    elapsed_sec = stats["median"]
+                    with open(reftimecsv, "a") as tf:
+                        tf.write(
+                            "{}, {:.6f}, {:.6f}, {:.6f}, {:.6f}, {:.6f}, {}, {}\n".format(
+                                outstem,
+                                stats["median"],
+                                stats["mean"],
+                                stats["std"],
+                                stats["min"],
+                                stats["max"],
+                                max(1, args.time_runs),
+                                max(0, args.time_warmup),
+                            )
+                        )
+                    with open(reftimecsv_raw, "a") as tf:
+                        for k, t in enumerate(stats["times"]):
+                            tf.write("{}, {}, {:.6f}\n".format(outstem, k, float(t)))
+                except KeyboardInterrupt:
+                    raise KeyboardInterrupt
+                except subprocess.TimeoutExpired:
+                    _error(outstem + " (Ref Timeout)")
+                except:
+                    _error(outstem + " (Ref Unknown)")
 
         return (imagefn, refimagefn, outstem)
 
@@ -716,6 +852,27 @@ def main():
         help="Time limit in seconds. The default limit is used during grading. Files that time out are reported as having maximum error.",
         type=int,
         default=180,
+    )
+    parser.add_argument(
+        "--time-runs",
+        metavar="N",
+        help="Number of timed runs per scene (median is recorded).",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
+        "--time-warmup",
+        metavar="N",
+        help="Number of warmup runs per scene (not recorded).",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--no-time-ref",
+        help="Do not record timing for the reference binary.",
+        action="store_false",
+        dest="time_ref",
+        default=True,
     )
     parser.add_argument(
         "--nocompare", help="Only render the image, do not compare", action="store_true"

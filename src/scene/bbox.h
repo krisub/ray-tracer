@@ -56,6 +56,10 @@ public:
   // return true, else return false.
   bool intersect(const ray &r, double &tMin, double &tMax) const;
 
+  // invDir = 1/dir once per ray
+  bool intersect(const glm::dvec3 &origin, const glm::dvec3 &invDir,
+                 double &tMin, double &tMax) const;
+
   double area();
   double volume();
   void merge(const BoundingBox &bBox);

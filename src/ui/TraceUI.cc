@@ -24,6 +24,13 @@ template <typename T> void load(Json &j, const string &field, T &target) {
   target = j.value(field, target);
 }
 
+TraceUI::AccelMode parseAccelMode(const std::string &mode) {
+  if (mode == "wide8") {
+    return TraceUI::AccelMode::Wide8;
+  }
+  return TraceUI::AccelMode::Binary;
+}
+
 } // anonymous namespace
 
 TraceUI::TraceUI() {
@@ -44,6 +51,7 @@ void TraceUI::loadFromJson(const char *file) {
   load(json, "size", m_nSize);
   load(json, "recursion_depth", m_nDepth);
   load(json, "threshold", m_nThreshold);
+  load(json, "ray_term_threshold", m_nRayTermThresh);
   load(json, "blocksize", m_nBlockSize);
   load(json, "supersamples", m_nSuperSamples);
   load(json, "aa_threshold", m_nAaThreshold);
@@ -58,7 +66,17 @@ void TraceUI::loadFromJson(const char *file) {
   // added by me
   load(json, "total_internal_reflection", m_totalInternalReflection);
   load(json, "adaptive_antialiasing", m_antialiasingAdaptive);
+  load(json, "stochastic_antialiasing", m_antialiasingStochastic);
+  load(json, "aa_visualize", m_aaVisualize);
+  load(json, "sinc_texture", m_sincTexture);
   load(json, "handle_overlap", m_handleOverlap);
+  const std::string accelMode = json.value("accel_mode", std::string("binary"));
+  const std::string tlasAccelMode =
+      json.value("tlas_accel_mode", accelMode);
+  const std::string blasAccelMode =
+      json.value("blas_accel_mode", accelMode);
+  m_tlasAccelMode = parseAccelMode(tlasAccelMode);
+  m_blasAccelMode = parseAccelMode(blasAccelMode);
   /*
    * Note for Students:
    * The following options are legacy from previous semesters.
