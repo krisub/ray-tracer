@@ -1,4 +1,5 @@
 #include "material.h"
+#include "../SceneObjects/Portal.h"
 #include "../ui/TraceUI.h"
 #include "light.h"
 #include "ray.h"
@@ -112,10 +113,14 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     if (distAtten < 1e-6)
       continue; // skip if light doesn't contribute anything
 
+    glm::dvec3 emissionAlongPath(0.0, 0.0, 0.0);
+    glm::dvec3 *emissionOut =
+        (traceUI && traceUI->getGoop()) ? &emissionAlongPath : nullptr;
     glm::dvec3 shadowAtten =
-        pLight->shadowAttenuation(r, surfaceNormal, hitPoint);
-    if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
-      continue; // skip diffuse and specular if in shadow
+        pLight->shadowAttenuation(r, surfaceNormal, hitPoint, emissionOut);
+    if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6 &&
+        (emissionAlongPath.x + emissionAlongPath.y + emissionAlongPath.z < 1e-9))
+      continue; // skip diffuse and specular if in shadow and no emission
 
     double diffuseDot = glm::dot(surfaceNormal, dirToLight);
     double diffuseReflection;
@@ -133,6 +138,10 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     if (diffuseReflection > 0) {
       glm::dvec3 diffuse = kd(i) * pLight->getColor() * diffuseReflection;
       color += distAtten * shadowAtten * diffuse;
+      if (traceUI && traceUI->getGoop() &&
+          (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
+           emissionAlongPath.z > 1e-9))
+        color += emissionAlongPath * kd(i) * diffuseReflection;
     }
 
     // only do specular if diffuse component exists
@@ -148,12 +157,18 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
       glm::dvec3 specular =
           ks(i) * pLight->getColor() * pow(specularReflection, shine);
       color += distAtten * shadowAtten * specular;
+      if (traceUI && traceUI->getGoop() &&
+          (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
+           emissionAlongPath.z > 1e-9))
+        color += emissionAlongPath * ks(i) * pow(specularReflection, shine);
     }
   }
 
   // Area lights from emissive objects (only when --goop): sample surface, cast
   // shadow ray; if we hit the emissive object we're lit, else blocked.
-  if (traceUI && traceUI->getGoop()) {
+  // Disabled: spec wants path-integrated emission only, not area-light behavior.
+  constexpr bool kUseEmissiveAsAreaLights = false;
+  if (kUseEmissiveAsAreaLights && traceUI && traceUI->getGoop()) {
   const std::vector<SceneObject *> emissiveObjs = scene->getEmissiveObjects();
   constexpr int kEmissiveSamples = 8;
   isect dummyIsect;
@@ -170,19 +185,54 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
       const double dist = glm::length(toLight);
       if (dist < 1e-6)
         continue;
-      const glm::dvec3 dirToLight = toLight / dist;
-      ray shadowRay(hitPoint + dirToLight * RAY_EPSILON, dirToLight,
-                    glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+      glm::dvec3 dirToLight = toLight / dist;
+      glm::dvec3 currPoint = hitPoint + dirToLight * RAY_EPSILON;
+      glm::dvec3 targetPoint = lightPoint;
+      constexpr int maxPortalHops = 16;
+      int portalHops = 0;
+      bool reachesLight = false;
       isect shadowIsect;
-      if (!scene->intersect(shadowRay, shadowIsect))
+      double hitDist = 0.0;
+      glm::dvec3 hitLightNormal;
+      while (portalHops < maxPortalHops) {
+        const glm::dvec3 toTarget = targetPoint - currPoint;
+        const double distToTarget = glm::length(toTarget);
+        if (distToTarget < 1e-9)
+          break;
+        dirToLight = toTarget / distToTarget;
+        ray shadowRay(currPoint, dirToLight, glm::dvec3(1.0, 1.0, 1.0),
+                      ray::SHADOW);
+        if (!scene->intersect(shadowRay, shadowIsect)) {
+          break;
+        }
+        if (shadowIsect.getT() >= distToTarget - RAY_EPSILON) {
+          break;
+        }
+        const Portal *portal =
+            dynamic_cast<const Portal *>(shadowIsect.getObject());
+        if (portal && portal->getPartner()) {
+          glm::dvec3 exitOrigin, exitDir;
+          if (portal->computeExitRay(shadowRay.at(shadowIsect), dirToLight,
+                                     exitOrigin, exitDir)) {
+            currPoint = exitOrigin;
+            ++portalHops;
+            continue;
+          }
+        }
+        if (shadowIsect.getObject() == emissiveObj) {
+          reachesLight = true;
+          hitDist = shadowIsect.getT();
+          hitLightNormal = shadowIsect.getN();
+        }
+        break;
+      }
+      if (!reachesLight)
         continue;
       // blocked unless we hit the emissive object itself (then light reaches us)
       if (shadowIsect.getObject() != emissiveObj)
         continue;
-      const double hitDist = shadowIsect.getT();
       if (hitDist < 1e-6)
         continue;
-      const glm::dvec3 hitLightNormal = shadowIsect.getN();
       const glm::dvec3 Le =
           shadowIsect.getMaterial().ke(shadowIsect);
       const double cosLight =
@@ -245,7 +295,7 @@ glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
       const double pi_t = M_PI * t;
       return std::sin(pi_t) / pi_t;
     };
-    auto lanczos2 = [&sinc](double t) -> double {
+    auto lanczos2 = [](double t) -> double { // [&sinc]
       if (std::abs(t) >= LANCZOS_RADIUS)
         return 0.0;
       return sinc(t) * sinc(t / LANCZOS_RADIUS);

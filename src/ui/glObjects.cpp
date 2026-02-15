@@ -2,7 +2,8 @@
 
 #include <FL/gl.h>
 #include <FL/glu.h>
-#include <math.h>
+#define _USE_MATH_DEFINES
+#include <cmath>
 
 #include "../scene/light.h"
 #include "../scene/ray.h"
@@ -11,14 +12,14 @@
 #include "../SceneObjects/Box.h"
 #include "../SceneObjects/Cone.h"
 #include "../SceneObjects/Cylinder.h"
+#include "../SceneObjects/Portal.h"
 #include "../SceneObjects/Sphere.h"
 #include "../SceneObjects/Square.h"
 #include "../SceneObjects/trimesh.h"
 
 using namespace std;
 
-const double pi =
-    3.1415926535897932384626433832795028841971693993751058209749445923078164062862;
+const double pi = M_PI;
 
 void Scene::glDraw(int quality, bool actualMaterials,
                    bool actualTextures) const {

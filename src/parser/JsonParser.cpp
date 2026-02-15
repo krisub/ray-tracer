@@ -375,6 +375,34 @@ Scene *JsonParser::parseScene() {
       for (const auto &geom : geoms) {
         scene->add(geom);
       }
+    } else if (key == "portal_pair") {
+      auto arr = val.get<std::vector<json>>();
+      if (arr.size() != 2) {
+        throw ParserException(
+            "portal_pair must have exactly 2 portals, got " +
+            std::to_string(arr.size()));
+      }
+      Material m = pd.cur_mat;
+      auto parsePortal = [&](const json &j) -> Portal * {
+        Material pm = GET_MAT_W_CUR(j, pd);
+        double radius = 0.5;
+        IGNORE_MISSING(j.at("radius").get_to(radius));
+        auto port = new Portal(pd.s, &pm, radius);
+        if (hasKey(j, "transform")) {
+          std::vector<double> tvec = j.at("transform").get<std::vector<double>>();
+          glm::dmat4 xform = glm::make_mat4(tvec.data());
+          port->setTransform(MatrixTransform(xform));
+        } else {
+          port->setTransform(MatrixTransform(pd.getCurrentTransform()));
+        }
+        return port;
+      };
+      Portal *p0 = parsePortal(arr[0]);
+      Portal *p1 = parsePortal(arr[1]);
+      p0->setPartner(p1);
+      p1->setPartner(p0);
+      scene->add(p0);
+      scene->add(p1);
     } else {
       throw ParserException("Unknown scene object type: " + key);
     }

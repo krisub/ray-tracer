@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
 
+#include "../SceneObjects/Portal.h"
 #include "light.h"
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
@@ -8,6 +9,27 @@
 
 using namespace std;
 extern TraceUI *traceUI;
+
+// emission integrated along path [0,t]: int_0^t Le * Kt^(t-s) ds = Le * (Kt^t - 1)/ln(Kt)
+static glm::dvec3 integratedEmissiveAlongPath(const glm::dvec3 &Le,
+                                              const glm::dvec3 &Kt, double t) {
+  if (t <= 0.0)
+    return glm::dvec3(0.0, 0.0, 0.0);
+  glm::dvec3 out(0.0, 0.0, 0.0);
+  const double eps = 1e-6;
+  for (int c = 0; c < 3; ++c) {
+    double ktc = Kt[c], lec = Le[c];
+    if (lec < eps)
+      continue;
+    if (ktc < eps)
+      out[c] = 0.0;
+    else if (ktc >= 1.0 - eps)
+      out[c] = lec * t;
+    else
+      out[c] = lec * (std::pow(ktc, t) - 1.0) / std::log(ktc);
+  }
+  return out;
+}
 
 static glm::dvec3 averageKtFromObjects(
     const std::vector<const SceneObject *> &objStack, const isect &i) {
@@ -35,15 +57,18 @@ double DirectionalLight::distanceAttenuation(const glm::dvec3 &) const {
  */
 glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
                                                const glm::dvec3 &surfaceNormal,
-                                               const glm::dvec3 &p) const {
+                                               const glm::dvec3 &p,
+                                               glm::dvec3 *emissionOut) const {
   if (traceUI->getHandleOverlap()) {
-    return shadowAttenuationOverlap(r, surfaceNormal, p);
+    return shadowAttenuationOverlap(r, surfaceNormal, p, emissionOut);
   }
   // YOUR CODE HERE:
   // You should implement shadow-handling code here.
   glm::dvec3 lightAtten(1.0, 1.0, 1.0);
   glm::dvec3 dirToLight = getDirection(p);
   glm::dvec3 currPoint = p;
+  constexpr int maxPortalHops = 16;
+  int portalHops = 0;
 
   while (true) {
     ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
@@ -51,6 +76,18 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
     isect i;
 
     if (scene->intersect(shadowRay, i)) {
+      const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+      if (portal && portal->getPartner() && portalHops < maxPortalHops) {
+        glm::dvec3 exitOrigin, exitDir;
+        if (portal->computeExitRay(shadowRay.at(i), dirToLight, exitOrigin,
+                                   exitDir)) {
+          currPoint = exitOrigin;
+          dirToLight = exitDir;
+          ++portalHops;
+          continue;
+        }
+      }
+
       const Material &m = i.getMaterial();
       glm::dvec3 kt = m.kt(i);
 
@@ -62,11 +99,13 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
 
       if (direction > 0) {
         // traveling out of the material
-        // std::cout << "exit distance: " << i.getT() << " | Kt: " << kt.x <<
-        // std::endl;
-        double distance =
-            i.getT(); // the last time we traveled was entering the material
+        double distance = i.getT();
         lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
+        if (emissionOut && traceUI->getGoop()) {
+          glm::dvec3 Le = m.ke(i);
+          if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+            *emissionOut += integratedEmissiveAlongPath(Le, kt, distance);
+        }
       }
 
       if (glm::length(lightAtten) < 1e-6) {
@@ -84,11 +123,13 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
 
 glm::dvec3 DirectionalLight::shadowAttenuationOverlap(
     const ray &r, const glm::dvec3 &surfaceNormal,
-    const glm::dvec3 &p) const {
+    const glm::dvec3 &p, glm::dvec3 *emissionOut) const {
   glm::dvec3 lightAtten(1.0, 1.0, 1.0);
   glm::dvec3 dirToLight = getDirection(p);
   glm::dvec3 currPoint = p;
   std::vector<const SceneObject *> objStack;
+  constexpr int maxPortalHops = 16;
+  int portalHops = 0;
 
   while (true) {
     ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
@@ -96,12 +137,32 @@ glm::dvec3 DirectionalLight::shadowAttenuationOverlap(
     isect i;
 
     if (scene->intersect(shadowRay, i)) {
+      const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+      if (portal && portal->getPartner() && portalHops < maxPortalHops) {
+        glm::dvec3 exitOrigin, exitDir;
+        if (portal->computeExitRay(shadowRay.at(i), dirToLight, exitOrigin,
+                                   exitDir)) {
+          currPoint = exitOrigin;
+          dirToLight = exitDir;
+          ++portalHops;
+          continue;
+        }
+      }
+
       double segmentDistance = i.getT();
       if (!objStack.empty()) {
         glm::dvec3 avgKt = averageKtFromObjects(objStack, i);
         lightAtten *=
             glm::pow(avgKt, glm::dvec3(segmentDistance, segmentDistance,
                                        segmentDistance));
+        if (emissionOut && traceUI->getGoop()) {
+          for (const SceneObject *obj : objStack) {
+            const Material &mat = obj->getMaterial();
+            glm::dvec3 Le = mat.ke(i), Kt = mat.kt(i);
+            if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+              *emissionOut += integratedEmissiveAlongPath(Le, Kt, segmentDistance);
+          }
+        }
       }
 
       if (glm::length(lightAtten) < 1e-6) {
@@ -176,15 +237,18 @@ glm::dvec3 PointLight::getDirection(const glm::dvec3 &P) const {
  */
 glm::dvec3 PointLight::shadowAttenuation(const ray &r,
                                          const glm::dvec3 &surfaceNormal,
-                                         const glm::dvec3 &p) const {
+                                         const glm::dvec3 &p,
+                                         glm::dvec3 *emissionOut) const {
   if (traceUI->getHandleOverlap()) {
-    return shadowAttenuationOverlap(r, surfaceNormal, p);
+    return shadowAttenuationOverlap(r, surfaceNormal, p, emissionOut);
   }
   // YOUR CODE HERE:
   // You should implement shadow-handling code here.
 
   glm::dvec3 lightAtten(1.0, 1.0, 1.0);
   glm::dvec3 currPoint = p;
+  constexpr int maxPortalHops = 16;
+  int portalHops = 0;
 
   while (true) {
     glm::dvec3 pointToLight =
@@ -201,6 +265,17 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
         break; // behind light
       }
 
+      const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+      if (portal && portal->getPartner() && portalHops < maxPortalHops) {
+        glm::dvec3 exitOrigin, exitDir;
+        if (portal->computeExitRay(shadowRay.at(i), dirToLight, exitOrigin,
+                                   exitDir)) {
+          currPoint = exitOrigin;
+          ++portalHops;
+          continue;
+        }
+      }
+
       glm::dvec3 kt = i.getMaterial().kt(i);
       if (glm::length(kt) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0);
@@ -211,6 +286,11 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
       if (direction > 0) {
         double distance = i.getT();
         lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
+        if (emissionOut && traceUI->getGoop()) {
+          glm::dvec3 Le = i.getMaterial().ke(i);
+          if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+            *emissionOut += integratedEmissiveAlongPath(Le, kt, distance);
+        }
       }
 
       if (glm::length(lightAtten) < 1e-6) {
@@ -228,10 +308,12 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
 
 glm::dvec3 PointLight::shadowAttenuationOverlap(
     const ray &r, const glm::dvec3 &surfaceNormal,
-    const glm::dvec3 &p) const {
+    const glm::dvec3 &p, glm::dvec3 *emissionOut) const {
   glm::dvec3 lightAtten(1.0, 1.0, 1.0);
   glm::dvec3 currPoint = p;
   std::vector<const SceneObject *> objStack;
+  constexpr int maxPortalHops = 16;
+  int portalHops = 0;
 
   while (true) {
     glm::dvec3 pointToLight = position - currPoint;
@@ -247,12 +329,31 @@ glm::dvec3 PointLight::shadowAttenuationOverlap(
         break;
       }
 
+      const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+      if (portal && portal->getPartner() && portalHops < maxPortalHops) {
+        glm::dvec3 exitOrigin, exitDir;
+        if (portal->computeExitRay(shadowRay.at(i), dirToLight, exitOrigin,
+                                   exitDir)) {
+          currPoint = exitOrigin;
+          ++portalHops;
+          continue;
+        }
+      }
+
       double segmentDistance = i.getT();
       if (!objStack.empty()) {
         glm::dvec3 avgKt = averageKtFromObjects(objStack, i);
         lightAtten *=
             glm::pow(avgKt, glm::dvec3(segmentDistance, segmentDistance,
                                        segmentDistance));
+        if (emissionOut && traceUI->getGoop()) {
+          for (const SceneObject *obj : objStack) {
+            const Material &mat = obj->getMaterial();
+            glm::dvec3 Le = mat.ke(i), Kt = mat.kt(i);
+            if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
+              *emissionOut += integratedEmissiveAlongPath(Le, Kt, segmentDistance);
+          }
+        }
       }
 
       if (glm::length(lightAtten) < 1e-6) {

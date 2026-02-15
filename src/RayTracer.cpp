@@ -3,6 +3,7 @@
 #pragma warning(disable : 4786)
 
 #include "RayTracer.h"
+#include "SceneObjects/Portal.h"
 #include "interp.h"
 #include "scene/light.h"
 #include "scene/material.h"
@@ -309,6 +310,33 @@ RayTracer::traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
   if (scene->intersect(r, i)) {
     t = i.getT();
 
+    const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+    if (portal && portal->getPartner()) {
+      glm::dvec3 exitOrigin, exitDir;
+      if (portal->computeExitRay(r.at(i), r.getDirection(), exitOrigin,
+                                 exitDir)) {
+        constexpr int maxPortalHops = 16;
+        static thread_local int portalHops = 0;
+        if (portalHops < maxPortalHops) {
+          ++portalHops;
+          ray exitRay(exitOrigin, exitDir, r.getAtten(), r.type());
+          glm::dvec3 teleportedColor =
+              traceRayOverlap(exitRay, thresh, depth, t, objStack);
+          --portalHops;
+          glm::dvec2 uv = i.getUVCoordinates();
+          double du = uv.x - 0.5, dv = uv.y - 0.5;
+          double distFromCenter = 2.0 * std::sqrt(du * du + dv * dv);
+          double rim = (distFromCenter > 0.85)
+              ? std::min(1.0, (distFromCenter - 0.85) / 0.15)
+              : 0.0;
+          glm::dvec3 ke = i.getMaterial().ke(i);
+          if (ke.x < 1e-9 && ke.y < 1e-9 && ke.z < 1e-9)
+            ke = glm::dvec3(0.35, 0.65, 1.0);
+          return teleportedColor + rim * ke;
+        }
+      }
+    }
+
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
 
@@ -416,6 +444,32 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
   if (scene->intersect(r, i)) {
     t = i.getT();
+
+    const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+    if (portal && portal->getPartner()) {
+      glm::dvec3 exitOrigin, exitDir;
+      if (portal->computeExitRay(r.at(i), r.getDirection(), exitOrigin,
+                                 exitDir)) {
+        constexpr int maxPortalHops = 16;
+        static thread_local int portalHops = 0;
+        if (portalHops < maxPortalHops) {
+          ++portalHops;
+          ray exitRay(exitOrigin, exitDir, r.getAtten(), r.type());
+          glm::dvec3 teleportedColor = traceRay(exitRay, thresh, depth, t);
+          --portalHops;
+          glm::dvec2 uv = i.getUVCoordinates();
+          double du = uv.x - 0.5, dv = uv.y - 0.5;
+          double distFromCenter = 2.0 * std::sqrt(du * du + dv * dv);
+          double rim = (distFromCenter > 0.85)
+              ? std::min(1.0, (distFromCenter - 0.85) / 0.15)
+              : 0.0;
+          glm::dvec3 ke = i.getMaterial().ke(i);
+          if (ke.x < 1e-9 && ke.y < 1e-9 && ke.z < 1e-9)
+            ke = glm::dvec3(0.35, 0.65, 1.0);
+          return teleportedColor + rim * ke;
+        }
+      }
+    }
 
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
