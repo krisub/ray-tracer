@@ -374,6 +374,22 @@ public:
   }
   void setIndex(const MaterialParameter &index) { _index = index; }
 
+  /** @brief set optional normal map texture for normal/bump mapping */
+  void setNormalMap(TextureMap *tex) { _normalMap = tex; }
+  /** @brief set strength multiplier for normal map (1.0 = as-is, >1 = more pronounced) */
+  void setNormalMapStrength(double s) { _normalMapStrength = s; }
+  /** @brief returns true if material has a normal map */
+  bool hasNormalMap() const { return _normalMap != nullptr; }
+  /** @brief get the normal map (may be nullptr) */
+  TextureMap *getNormalMap() const { return _normalMap; }
+
+  /** @brief set optional height map for parallax mapping */
+  void setHeightMap(TextureMap *tex) { _heightMap = tex; }
+  /** @brief set parallax scale (height multiplier) */
+  void setParallaxScale(double s) { _parallaxScale = s; }
+  /** @brief returns true if material has a height map */
+  bool hasHeightMap() const { return _heightMap != nullptr; }
+
   // get booleans for reflection and refraction
   bool Refl() const { return _refl; }   ///< is the material reflective?
   bool Trans() const { return _trans; } ///< is the material transmissive?
@@ -402,6 +418,10 @@ private:
   bool _both;                   ///< reflection and transmission
   MaterialParameter _shininess; ///< shininess exponent
   MaterialParameter _index;     ///< index of refraction
+  TextureMap *_normalMap = nullptr; ///< optional normal map for normal mapping
+  double _normalMapStrength = 3.0;  ///< strength multiplier for normal map bumps
+  TextureMap *_heightMap = nullptr; ///< optional height map for parallax mapping
+  double _parallaxScale = 0.1;      ///< parallax height scale (LearnOpenGL uses ~0.1)
 
   void setBools() {
     _refl = !_kr.isZero();

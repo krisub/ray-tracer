@@ -67,6 +67,8 @@ public:
   bool getHandleOverlap() const { return m_handleOverlap; }
   bool sincTexture() const { return m_sincTexture; }
   bool getGoop() const { return m_goop; }
+  bool getNormalMapping() const { return m_normalMapping; }
+  bool getParallaxMapping() const { return m_parallaxMapping; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -146,6 +148,8 @@ protected:
   bool m_handleOverlap = false;
   bool m_sincTexture = false;
   bool m_goop = false;  // translucent emissive "radioactive goop" along path
+  bool m_normalMapping = false;  // normal mapping
+  bool m_parallaxMapping = false;  // parallax mapping
   AccelMode m_tlasAccelMode = AccelMode::Binary;
   AccelMode m_blasAccelMode = AccelMode::Binary;
 

@@ -106,6 +106,18 @@ Material parseMaterial(const json &j, ParseData &pd) {
   IGNORE_MISSING(m.setEmissive(parseMaterialParameter(j.at("emissive"), pd)));
   IGNORE_MISSING(m.setShininess(j.at("shininess").get<double>()));
   IGNORE_MISSING(m.setIndex(j.at("index").get<double>()));
+  if (hasKey(j, "normal_map")) {
+    auto texName = j.at("normal_map").get<std::string>();
+    auto texPath = pd.scene_dir / texName;
+    m.setNormalMap(pd.s->getTexture(texPath.string()));
+  }
+  IGNORE_MISSING(m.setNormalMapStrength(j.at("normal_map_strength").get<double>()));
+  if (hasKey(j, "height_map")) {
+    auto texName = j.at("height_map").get<std::string>();
+    auto texPath = pd.scene_dir / texName;
+    m.setHeightMap(pd.s->getTexture(texPath.string()));
+  }
+  IGNORE_MISSING(m.setParallaxScale(j.at("parallax_scale").get<double>()));
   return m;
 }
 
@@ -551,6 +563,10 @@ auto k = s.mesh.material_ids[f];
     if (!mtl.specular_texname.empty()) {
       std::string texPath = (pd.scene_dir / mtl.specular_texname).string();
       m->setSpecular(MaterialParameter(pd.s->getTexture(texPath)));
+    }
+    if (!mtl.bump_texname.empty()) {
+      std::string texPath = (pd.scene_dir / mtl.bump_texname).string();
+      m->setNormalMap(pd.s->getTexture(texPath));
     }
   }
 

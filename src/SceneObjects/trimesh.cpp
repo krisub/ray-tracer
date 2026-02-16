@@ -766,9 +766,21 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i, double bestT) const {
   // i.setMaterial(this->parent->getMaterial()); // using parent
 
   if (!parent->uvCoords.empty()) {
-    glm::dvec2 uv = (1.0 - u - v) * parent->uvCoords[ids[0]] +
-                    u * parent->uvCoords[ids[1]] + v * parent->uvCoords[ids[2]];
+    glm::dvec2 uv0 = parent->uvCoords[ids[0]];
+    glm::dvec2 uv1 = parent->uvCoords[ids[1]];
+    glm::dvec2 uv2 = parent->uvCoords[ids[2]];
+    glm::dvec2 uv = (1.0 - u - v) * uv0 + u * uv1 + v * uv2;
     i.setUVCoordinates(uv);
+    // tangent frame for normal mapping: T and B from UV derivatives
+    glm::dvec2 deltaUV1 = uv1 - uv0;
+    glm::dvec2 deltaUV2 = uv2 - uv0;
+    double f = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+    if (std::abs(f) > 1e-10) {
+      f = 1.0 / f;
+      glm::dvec3 dPdu = f * (deltaUV2.y * e1 - deltaUV1.y * e2);
+      glm::dvec3 dPdv = f * (-deltaUV2.x * e1 + deltaUV1.x * e2);
+      i.setTangentFrame(dPdu, dPdv);
+    }
   } else if (!parent->vertColors.empty()) { // getting vertex colors
     glm::dvec3 color1 = parent->vertColors[ids[0]];
     glm::dvec3 color2 = parent->vertColors[ids[1]];
