@@ -6,3 +6,6 @@ scenes
 raycheck.out
 cutoffs.csv
 ray-solution
+noaa
+run.sh
+out.png

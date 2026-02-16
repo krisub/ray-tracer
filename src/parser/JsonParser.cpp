@@ -162,6 +162,50 @@ Cylinder *parseCylinderBody(const json &j, ParseData &pd) {
   return c;
 }
 
+ImplicitSurface *parseImplicitSurfaceBody(const json &j, ParseData &pd) {
+  Material m = GET_MAT_W_CUR(j, pd);
+  std::string typeStr = j.at("type").get<std::string>();
+
+  ImplicitSurface::Type t;
+  if (typeStr == "sphere") {
+    t = ImplicitSurface::Type::Sphere;
+  } else if (typeStr == "torus") {
+    t = ImplicitSurface::Type::Torus;
+  } else if (typeStr == "goursat") {
+    t = ImplicitSurface::Type::Goursat;
+  } else if (typeStr == "blob") {
+    t = ImplicitSurface::Type::Blob;
+  } else {
+    throw ParserException("Unknown implicit_surface type: " + typeStr);
+  }
+
+  auto *surf = new ImplicitSurface(pd.s, &m, t);
+  surf->setTransform(pd.getCurrentTransform());
+
+  IGNORE_MISSING(surf->setRadius(j.at("radius").get<double>()));
+  if (typeStr == "torus") {
+    double majorR = 0.5, minorR = 0.2;
+    IGNORE_MISSING(j.at("major_radius").get_to(majorR));
+    IGNORE_MISSING(j.at("minor_radius").get_to(minorR));
+    surf->setTorusRadii(majorR, minorR);
+  }
+  if (typeStr == "goursat") {
+    double a = 0.0, b = 0.0, c = 1.0;
+    IGNORE_MISSING(j.at("a").get_to(a));
+    IGNORE_MISSING(j.at("b").get_to(b));
+    IGNORE_MISSING(j.at("c").get_to(c));
+    surf->setGoursatParams(a, b, c);
+  }
+  if (typeStr == "blob") {
+    glm::dvec3 c1(-0.3, 0, 0), c2(0.3, 0, 0);
+    IGNORE_MISSING(j.at("center1").get_to(c1));
+    IGNORE_MISSING(j.at("center2").get_to(c2));
+    surf->setBlobCenters(c1, c2);
+  }
+
+  return surf;
+}
+
 Cone *parseConeBody(const json &j, ParseData &pd) {
   Material m = GET_MAT_W_CUR(j, pd);
 
@@ -269,6 +313,8 @@ std::vector<Geometry *> parseGeometry(const json &j, ParseData &pd) {
   } else if (key == "obj_mesh") {
     std::vector<Trimesh *> trimeshes = parseObjmeshBody(val, pd);
     return std::vector<Geometry *>(trimeshes.begin(), trimeshes.end());
+  } else if (key == "implicit_surface") {
+    return {parseImplicitSurfaceBody(val, pd)};
   } else {
     throw ParserException("Unknown geometry type: " + key);
   }
@@ -280,8 +326,9 @@ bool isTransformKey(const std::string &s) {
   return std::find(std::begin(transformKeys), std::end(transformKeys), s) !=
          std::end(transformKeys);
 }
-const std::string geomKeys[7] = {"sphere", "box",      "square",  "cylinder",
-                                 "cone",   "tri_mesh", "obj_mesh"};
+const std::string geomKeys[8] = {"sphere",  "box",      "square",  "cylinder",
+                                 "cone",    "tri_mesh", "obj_mesh",
+                                 "implicit_surface"};
 bool isGeometryKey(const std::string &s) {
   return std::find(std::begin(geomKeys), std::end(geomKeys), s) !=
          std::end(geomKeys);
