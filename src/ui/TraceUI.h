@@ -47,7 +47,6 @@ public:
   bool aaSwitch() const { return m_antiAlias; }
   bool aaVisualize() const { return m_aaVisualize; }
   bool kdSwitch() const { return m_kdTree; }
-  // Backward-compatible alias for old single accel toggle.
   AccelMode accelMode() const { return m_tlasAccelMode; }
   AccelMode tlasAccelMode() const { return m_tlasAccelMode; }
   AccelMode blasAccelMode() const { return m_blasAccelMode; }

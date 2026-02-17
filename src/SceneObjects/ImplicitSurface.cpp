@@ -115,7 +115,7 @@ bool ImplicitSurface::intersectLocal(ray &r, isect &i) const {
   return sphereTrace(r, i, tMin, tMax);
 }
 
-BoundingBox ImplicitSurface::ComputeLocalBoundingBox() {
+BoundingBox ImplicitSurface::ComputeLocalBoundingBox() const {
   BoundingBox b;
   switch (type_) {
   case Type::Sphere:

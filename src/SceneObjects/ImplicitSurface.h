@@ -24,7 +24,7 @@ public:
 
   virtual bool intersectLocal(ray &r, isect &i) const override;
   virtual bool hasBoundingBoxCapability() const override { return true; }
-  virtual BoundingBox ComputeLocalBoundingBox() override;
+  virtual BoundingBox ComputeLocalBoundingBox() const;
 
   // Type-specific parameters (set after construction)
   void setRadius(double r) { radius_ = r; }
