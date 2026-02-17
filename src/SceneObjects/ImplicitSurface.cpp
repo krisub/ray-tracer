@@ -58,7 +58,7 @@ glm::dvec3 ImplicitSurface::gradient(glm::dvec3 p) const {
     return len > 1e-10 ? p / len : glm::dvec3(1, 0, 0);
   }
   case Type::Torus: {
-    // Torus SDF gradient: analytical for efficiency
+    // torus SDF gradient: analytical for efficiency
     double xy_len = glm::length(glm::dvec2(x, y));
     if (xy_len < 1e-12)
       return glm::dvec3(0, 0, z > 0 ? 1 : -1);

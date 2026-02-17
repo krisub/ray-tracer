@@ -146,8 +146,8 @@ protected:
   bool m_handleOverlap = false;
   bool m_sincTexture = false;
   bool m_goop = false;  // translucent emissive "radioactive goop" along path
-  AccelMode m_tlasAccelMode = AccelMode::Binary;
-  AccelMode m_blasAccelMode = AccelMode::Binary;
+  AccelMode m_tlasAccelMode = AccelMode::Wide8;
+  AccelMode m_blasAccelMode = AccelMode::Wide8;
   bool m_neural = false;
 
   std::unique_ptr<CubeMap> cubemap;
