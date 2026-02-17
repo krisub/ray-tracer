@@ -44,14 +44,16 @@ bool Sphere::intersectLocal(ray &r, isect &i) const {
   i.setMaterial(this->getMaterial());
 
   double t1 = b - discriminant;
+  double t = (t1 > RAY_EPSILON) ? t1 : t2;
 
-  if (t1 > RAY_EPSILON) {
-    i.setT(t1);
-    i.setN(glm::normalize(r.at(t1)));
-  } else {
-    i.setT(t2);
-    i.setN(glm::normalize(r.at(t2)));
-  }
+  i.setT(t);
+  glm::dvec3 localHit = glm::normalize(r.at(t));
+  i.setN(localHit);
+
+  // Spherical UV mapping for texture coordinates
+  double u = 0.5 + std::atan2(localHit.y, localHit.x) / (2.0 * M_PI);
+  double texV = std::acos(std::max(-1.0, std::min(1.0, localHit.z))) / M_PI;
+  i.setUVCoordinates(glm::dvec2(u, texV));
 
   return true;
 }

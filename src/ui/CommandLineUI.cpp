@@ -37,6 +37,7 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"aa-visualize", no_argument, nullptr, 1005},
       {"sinc", no_argument, nullptr, 1006},
       {"goop", no_argument, nullptr, 1007},
+      {"neural", no_argument, nullptr, 1008},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -87,6 +88,9 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
     case 1007: // --goop
       m_goop = true;
       break;
+    case 1008: // --neural
+      m_neural = true;
+      break;
     default:
       // Oops; unknown argument
       std::cerr << "Invalid argument: '" << i << "'." << std::endl;
@@ -132,6 +136,8 @@ int CommandLineUI::run() {
         raytracer->aaAdaptiveImage();
       } else if (m_fxAntialiasing) {
         raytracer->aaFastApproxImage();
+      } else if (m_neural) {
+        raytracer->aaNeuralImage();
       } else {
         raytracer->aaImage();
       }

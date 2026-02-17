@@ -1,4 +1,5 @@
 #include "material.h"
+#include "ReactionDiffusionTexture.h"
 #include "../SceneObjects/Portal.h"
 #include "../ui/TraceUI.h"
 #include "light.h"
@@ -370,16 +371,19 @@ glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
   return glm::dvec3(r, g, b);
 }
 
+MaterialParameter::MaterialParameter(ReactionDiffusionTexture *tex)
+    : _value(0, 0, 0), _textureSource(tex) {}
+
 glm::dvec3 MaterialParameter::value(const isect &is) const {
-  if (0 != _textureMap)
-    return _textureMap->getMappedValue(is.getUVCoordinates());
+  if (0 != _textureSource)
+    return _textureSource->getMappedValue(is.getUVCoordinates());
   else
     return _value;
 }
 
 double MaterialParameter::intensityValue(const isect &is) const {
-  if (0 != _textureMap) {
-    glm::dvec3 value(_textureMap->getMappedValue(is.getUVCoordinates()));
+  if (0 != _textureSource) {
+    glm::dvec3 value(_textureSource->getMappedValue(is.getUVCoordinates()));
     return interp::luminance601(value);
   } else
     return interp::luminance601(_value);

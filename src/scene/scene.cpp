@@ -6,6 +6,7 @@
 #include "bvh.h"
 #include "kdTree.h"
 #include "light.h"
+#include "ReactionDiffusionTexture.h"
 #include "scene.h"
 #include <glm/gtx/extended_min_max.hpp>
 #include <glm/gtx/io.hpp>
@@ -224,6 +225,28 @@ TextureMap *Scene::getTexture(string name) {
   if (itr == textureCache.end()) {
     textureCache[name].reset(new TextureMap(name));
     return textureCache[name].get();
+  }
+  return itr->second.get();
+}
+
+ReactionDiffusionTexture *Scene::getReactionDiffusionTexture(
+    int width, int height, const std::string &pattern, int iterations) {
+  std::string key = "rd_" + std::to_string(width) + "_" +
+                    std::to_string(height) + "_" + pattern + "_" +
+                    std::to_string(iterations);
+  auto itr = rdTextureCache.find(key);
+  if (itr == rdTextureCache.end()) {
+    ReactionDiffusionTexture::Pattern p = ReactionDiffusionTexture::Pattern::Spots;
+    if (pattern == "stripes")
+      p = ReactionDiffusionTexture::Pattern::Stripes;
+    else if (pattern == "wood")
+      p = ReactionDiffusionTexture::Pattern::Wood;
+    else if (pattern == "marble")
+      p = ReactionDiffusionTexture::Pattern::Marble;
+
+    rdTextureCache[key].reset(
+        new ReactionDiffusionTexture(width, height, p, iterations));
+    return rdTextureCache[key].get();
   }
   return itr->second.get();
 }

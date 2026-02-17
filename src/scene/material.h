@@ -35,6 +35,18 @@ class isect;
 
 using std::string;
 
+class ReactionDiffusionTexture;
+
+/**
+ * @class TextureSource
+ * @brief Abstract base for texture sources (image files or procedural)
+ */
+class TextureSource {
+public:
+  virtual ~TextureSource() {}
+  virtual glm::dvec3 getMappedValue(const glm::dvec2 &coord) const = 0;
+};
+
 /* The TextureMap class can be used to store a texture map,
 which consists of a bitmap and various accessors to it. To implement basic
 texture mapping, you'll want to fill in the getMappedValue function to
@@ -49,7 +61,7 @@ implement basic texture mapping. */
  * used by `MaterialParameter` when a surface property is defined by a texture
  * rather than a solid/constant color
  */
-class TextureMap {
+class TextureMap : public TextureSource {
 public:
   /**
    * @brief constructs a TextureMap from an image file
@@ -73,7 +85,7 @@ public:
    * @param coord the 2D texture coordinates (u, v)
    * @return glm::dvec3 the interpolated color value
    */
-  glm::dvec3 getMappedValue(const glm::dvec2 &coord) const;
+  glm::dvec3 getMappedValue(const glm::dvec2 &coord) const override;
 
   // Retrieve the value stored in a physical location (with integer coordinates)
   // in the bitmap. Should be called from getMappedValue in order to do
@@ -138,18 +150,21 @@ class MaterialParameter {
 public:
   /** @brief constructs a parameter with a constant 3D color/vector */
   explicit MaterialParameter(const glm::dvec3 &par)
-      : _value(par), _textureMap(0) {}
+      : _value(par), _textureSource(0) {}
 
   /** @brief constructs a parameter with a constant scalar (replicated to
    * x,y,z) */
   explicit MaterialParameter(const double par)
-      : _value(par, par, par), _textureMap(0) {}
+      : _value(par, par, par), _textureSource(0) {}
 
   /** @brief constructs a parameter linked to a texture map */
-  explicit MaterialParameter(TextureMap *tex) : _textureMap(tex) {}
+  explicit MaterialParameter(TextureMap *tex) : _textureSource(tex) {}
+
+  /** @brief constructs a parameter linked to a reaction-diffusion texture */
+  explicit MaterialParameter(ReactionDiffusionTexture *tex);
 
   /** @brief default constructor (black/zero) */
-  MaterialParameter() : _value(0.0, 0.0, 0.0), _textureMap(0) {}
+  MaterialParameter() : _value(0.0, 0.0, 0.0), _textureSource(0) {}
 
   // these are all operators for combining material parameters
   MaterialParameter &operator*=(const MaterialParameter &rhs) {
@@ -179,7 +194,7 @@ public:
   /** @brief sets the constant value (removes texture map if present) */
   void setValue(const glm::dvec3 &rhs) {
     _value = rhs;
-    _textureMap = 0;
+    _textureSource = 0;
   }
 
   /** @brief sets the constant scalar value (removes texture map if present) */
@@ -187,7 +202,7 @@ public:
     _value[0] = rhs;
     _value[1] = rhs;
     _value[2] = rhs;
-    _textureMap = 0;
+    _textureSource = 0;
   }
 
   /** @brief checks if the constant value is effectively zero (black) */
@@ -224,11 +239,11 @@ public:
   // Use this to determine if the particular parameter is
   // mapped; use this to determine if we need to somehow renormalize.
   /** @brief returns true if this param uses a texture map */
-  bool mapped() const { return _textureMap != 0; }
+  bool mapped() const { return _textureSource != 0; }
 
 private:
-  glm::dvec3 _value;       ///< constant color/vector value
-  TextureMap *_textureMap; ///< pointer to texture map (if any)
+  glm::dvec3 _value;           ///< constant color/vector value
+  TextureSource *_textureSource; ///< pointer to texture (image or procedural)
 };
 
 /**

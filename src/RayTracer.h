@@ -48,6 +48,7 @@ public:
   int aaAdaptiveImage();
   int aaFastApproxImage();
   int aaStochasticImage();
+  int aaNeuralImage();
   bool checkRender();
   void waitRender();
 

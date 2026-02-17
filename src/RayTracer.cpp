@@ -28,6 +28,10 @@
 #include <random>
 #include <utility>
 
+#include <unistd.h> 
+#include <limits.h>
+#include <onnxruntime_cxx_api.h> // aaNeuralImage
+
 using namespace std;
 extern TraceUI *traceUI;
 
@@ -1130,6 +1134,97 @@ int RayTracer::aaFastApproxImage() {
 
   return 0;
 }
+
+int RayTracer::aaNeuralImage() {
+  char path[PATH_MAX];
+  ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
+  std::string exeDir = (count > 0) ? std::string(path, count) : "";
+  size_t last_slash = exeDir.find_last_of('/');
+  if (last_slash != std::string::npos) {
+      exeDir = exeDir.substr(0, last_slash);
+  }
+
+  std::string modelFile = exeDir + "/neural_aa_best.onnx";
+
+  Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "aaNeuralImage");
+  Ort::SessionOptions sessionOptions;
+  sessionOptions.SetIntraOpNumThreads(threads);
+  sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
+
+  Ort::Session session(env, modelFile.c_str(), sessionOptions);
+
+  // buffer to tensor
+  // RayTracer Buffer: [H, W, 3] (RGBRGB...) values 0-255
+  // model input:      [1, 3, H, W] (RRR...GGG...BBB...) values 0.0-1.0
+
+  std::vector<int64_t> inputShape = {1, 3, buffer_height, buffer_width};
+  size_t inputTensorSize = 3 * buffer_height * buffer_width;
+  std::vector<float> inputTensorValues(inputTensorSize);
+
+  #pragma omp parallel for collapse(2)
+  for (int y = 0; y < buffer_height; ++y) {
+      for (int x = 0; x < buffer_width; ++x) {
+          int pixelIdx = (x + y * buffer_width) * 3;
+          
+          float r = buffer[pixelIdx + 0] / 255.0f;
+          float g = buffer[pixelIdx + 1] / 255.0f;
+          float b = buffer[pixelIdx + 2] / 255.0f;
+
+          // [batch, channel, height, width]
+          size_t planeSize = buffer_width * buffer_height;
+          size_t offset = y * buffer_width + x;
+
+          inputTensorValues[offset] = r;                 
+          inputTensorValues[planeSize + offset] = g;     
+          inputTensorValues[2 * planeSize + offset] = b;
+      }
+  }
+
+  auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+      memoryInfo, inputTensorValues.data(), inputTensorSize, inputShape.data(), inputShape.size());
+
+  // const char* inputNames[] = {"input"};
+  // const char* outputNames[] = {"output"};
+
+  Ort::AllocatorWithDefaultOptions allocator;
+
+  auto inputNamePtr = session.GetInputNameAllocated(0, allocator);
+  auto outputNamePtr = session.GetOutputNameAllocated(0, allocator);
+
+  const char* inputNames[] = { inputNamePtr.get() };
+  const char* outputNames[] = { outputNamePtr.get() };
+
+  auto outputTensors = session.Run(
+      Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1, outputNames, 1);
+
+  // tensor to buffer
+  float* floatArr = outputTensors.front().GetTensorMutableData<float>();
+
+  #pragma omp parallel for collapse(2)
+  for (int y = 0; y < buffer_height; ++y) {
+      for (int x = 0; x < buffer_width; ++x) {
+          size_t planeSize = buffer_width * buffer_height;
+          size_t offset = y * buffer_width + x;
+
+          float r = floatArr[offset];
+          float g = floatArr[planeSize + offset];
+          float b = floatArr[2 * planeSize + offset];
+
+          r = std::max(0.0f, std::min(1.0f, r));
+          g = std::max(0.0f, std::min(1.0f, g));
+          b = std::max(0.0f, std::min(1.0f, b));
+
+          unsigned char* pixel = buffer.data() + (x + y * buffer_width) * 3;
+          pixel[0] = static_cast<unsigned char>(r * 255.0f);
+          pixel[1] = static_cast<unsigned char>(g * 255.0f);
+          pixel[2] = static_cast<unsigned char>(b * 255.0f);
+      }
+  }
+
+  return 0;
+}
+
 
 bool RayTracer::checkRender() {
   // YOUR CODE HERE

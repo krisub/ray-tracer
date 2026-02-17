@@ -40,6 +40,14 @@ public:
     blob_c1_ = c1;
     blob_c2_ = c2;
   }
+  void setBlobRadii(double r1, double r2) {
+    blob_radius1_ = r1;
+    blob_radius2_ = r2;
+  }
+  /** isosurface threshold: higher = thinner connection (and smaller blobs), lower = fatter. Default 0.5. */
+  void setBlobThreshold(double T) { blob_threshold_ = T; }
+
+  void setLipschitzConstant(double L) { lipschitz_override_ = L; }
 
 protected:
   void glDrawLocal(int quality, bool actualMaterials,
@@ -61,9 +69,14 @@ private:
   double goursat_b_ = 0.0;
   double goursat_c_ = 1.0;
 
-  // blob: two soft object centers
+  // blob: two soft object centers and influence radii (Wyvill b)
   glm::dvec3 blob_c1_{-0.3, 0, 0};
   glm::dvec3 blob_c2_{0.3, 0, 0};
+  double blob_radius1_ = 0.5;
+  double blob_radius2_ = 0.5;
+  double blob_threshold_ = 0.5;  // isosurface sum(f_i) = T
+
+  double lipschitz_override_ = 0.0;
 
   double eval(glm::dvec3 p) const;
   glm::dvec3 gradient(glm::dvec3 p) const;

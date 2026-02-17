@@ -83,10 +83,21 @@ MaterialParameter parseMaterialParameter(const json &j, ParseData &pd) {
     // the scene using getTexture. Bad things happen if you try
     // something else.
     p = MaterialParameter(pd.s->getTexture(texPath.string()));
+  } else if (hasKey(j, "reaction_diffusion")) {
+    const json &rd = j.at("reaction_diffusion");
+    int resolution = 512;
+    int iterations = 3000;
+    std::string pattern = "spots";
+    IGNORE_MISSING(rd.at("resolution").get_to(resolution));
+    IGNORE_MISSING(rd.at("iterations").get_to(iterations));
+    IGNORE_MISSING(rd.at("pattern").get_to(pattern));
+    auto *rdTex = pd.s->getReactionDiffusionTexture(
+        resolution, resolution, pattern, iterations);
+    p = MaterialParameter(rdTex);
   } else {
     auto s = j.begin().key();
     throw ParserException(
-        "Material parameter must be either constant or mapped "
+        "Material parameter must be constant, mapped, or reaction_diffusion "
         "but it is " +
         s);
   }
@@ -198,10 +209,21 @@ ImplicitSurface *parseImplicitSurfaceBody(const json &j, ParseData &pd) {
   }
   if (typeStr == "blob") {
     glm::dvec3 c1(-0.3, 0, 0), c2(0.3, 0, 0);
+    double radius1 = 0.5, radius2 = 0.5, threshold = 0.5;
     IGNORE_MISSING(j.at("center1").get_to(c1));
     IGNORE_MISSING(j.at("center2").get_to(c2));
+    IGNORE_MISSING(j.at("radius1").get_to(radius1));
+    IGNORE_MISSING(j.at("radius2").get_to(radius2));
+    IGNORE_MISSING(j.at("threshold").get_to(threshold));
     surf->setBlobCenters(c1, c2);
+    surf->setBlobRadii(radius1, radius2);
+    surf->setBlobThreshold(threshold);
   }
+
+  double lipschitz = 0.0;
+  IGNORE_MISSING(j.at("lipschitz_constant").get_to(lipschitz));
+  if (lipschitz > 0.0)
+    surf->setLipschitzConstant(lipschitz);
 
   return surf;
 }

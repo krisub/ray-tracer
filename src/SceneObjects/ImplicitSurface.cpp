@@ -1,4 +1,5 @@
 #define _USE_MATH_DEFINES
+#include <algorithm>
 #include <cmath>
 
 #include "ImplicitSurface.h"
@@ -31,10 +32,10 @@ double ImplicitSurface::eval(glm::dvec3 p) const {
   }
   case Type::Blob: {
     // Wyvill soft object: f(r) = (1 - r^2/b^2)^3 for r^2 < b^2, else 0
-    // isosurface at threshold T: sum f_i - T = 0
-    const double b2 = 0.25; // b^2, influence radius 0.5
-    const double T = 0.5;
-    auto soft = [b2](double r2) {
+    // isosurface at threshold T: sum f_i - T = 0; each blob has its own influence radius
+    const double b1_2 = blob_radius1_ * blob_radius1_;
+    const double b2_2 = blob_radius2_ * blob_radius2_;
+    auto soft = [](double r2, double b2) {
       if (r2 >= b2)
         return 0.0;
       double t = 1.0 - r2 / b2;
@@ -42,7 +43,7 @@ double ImplicitSurface::eval(glm::dvec3 p) const {
     };
     double r1_2 = glm::dot(p - blob_c1_, p - blob_c1_);
     double r2_2 = glm::dot(p - blob_c2_, p - blob_c2_);
-    return soft(r1_2) + soft(r2_2) - T;
+    return soft(r1_2, b1_2) + soft(r2_2, b2_2) - blob_threshold_;
   }
   }
   return 0;
@@ -90,16 +91,23 @@ glm::dvec3 ImplicitSurface::gradient(glm::dvec3 p) const {
 }
 
 double ImplicitSurface::lipschitzConstant() const {
+  if (lipschitz_override_ > 0.0)
+    return lipschitz_override_;
+
   switch (type_) {
   case Type::Sphere:
     return 2.5;
   case Type::Torus:
-    return 1.0; 
+    return 1.0;
   case Type::Goursat:
-    return 14.0; 
-  case Type::Blob:
-    return 4.0; // Wyvill
-  }  
+    return 14.0;
+  case Type::Blob: {
+    // Wyvill gradient scales ~1/min_radius^2 so using larger L for smaller blobs to avoid holes
+    double minR = std::min(blob_radius1_, blob_radius2_);
+    return std::max(4.0, 1.0 / (minR * minR));
+  }
+  }
+  return 4.0;
 }
 
 bool ImplicitSurface::sphereTrace(ray &r, isect &i, double tMin,
@@ -168,7 +176,7 @@ BoundingBox ImplicitSurface::getLocalBoundingBoxImpl() const {
     break;
   }
   case Type::Blob: {
-    double r = 0.6;
+    double r = std::max(blob_radius1_, blob_radius2_) + 0.1;
     glm::dvec3 lo = glm::min(blob_c1_, blob_c2_) - glm::dvec3(r);
     glm::dvec3 hi = glm::max(blob_c1_, blob_c2_) + glm::dvec3(r);
     b.setMin(lo);
@@ -188,5 +196,5 @@ void ImplicitSurface::glDrawLocal(int quality, bool actualMaterials,
   (void)quality;
   (void)actualMaterials;
   (void)actualTextures;
-  // ? how to draw implicit surfaces with OpenGL?
+  // can't draw implicit surfaces with OpenGL
 }

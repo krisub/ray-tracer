@@ -35,6 +35,7 @@ class Light;
 class Scene;
 class Bvh;
 class Trimesh;
+class ReactionDiffusionTexture;
 
 template <typename Obj> class KdTree;
 
@@ -208,6 +209,10 @@ public:
   // is destroyed.
   TextureMap *getTexture(string name);
 
+  /** Get or create a cached reaction-diffusion procedural texture */
+  ReactionDiffusionTexture *getReactionDiffusionTexture(int width, int height,
+      const std::string &pattern, int iterations);
+
   // These two functions are for handling ambient light; in the Phong model, the
   // "ambient" light is considered a property of the _scene_ as a whole and
   // hence should be set here.
@@ -251,6 +256,8 @@ private:
 
   typedef std::map<std::string, std::unique_ptr<TextureMap>> tmap;
   tmap textureCache;
+
+  std::map<std::string, std::unique_ptr<ReactionDiffusionTexture>> rdTextureCache;
 
   // Each object in the scene that has a hasBoundingBoxCapability(),
   // must fall within this bounding box. Objects that don't have

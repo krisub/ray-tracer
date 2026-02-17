@@ -148,6 +148,7 @@ protected:
   bool m_goop = false;  // translucent emissive "radioactive goop" along path
   AccelMode m_tlasAccelMode = AccelMode::Binary;
   AccelMode m_blasAccelMode = AccelMode::Binary;
+  bool m_neural = false;
 
   std::unique_ptr<CubeMap> cubemap;
 
