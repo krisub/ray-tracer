@@ -96,6 +96,11 @@ public:
     return glm::normalize(normi * v);
   }
 
+  /* transform a tangent/direction vector (scale, rotation, no translation) */
+  glm::dvec3 localToGlobalCoordsTangent(const glm::dvec3 &v) const {
+    return glm::dmat3(xform) * v;
+  }
+
   const glm::dmat4x4 &transform() const { return xform; }
 };
 

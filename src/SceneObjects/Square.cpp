@@ -39,5 +39,7 @@ bool Square::intersectLocal(ray &r, isect &i) const {
   }
 
   i.setUVCoordinates(glm::dvec2(P[0] + 0.5, P[1] + 0.5));
+  // tangent frame: u maps to x, v maps to y
+  i.setTangentFrame(glm::dvec3(1.0, 0.0, 0.0), glm::dvec3(0.0, 1.0, 0.0));
   return true;
 }

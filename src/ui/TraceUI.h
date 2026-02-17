@@ -47,7 +47,6 @@ public:
   bool aaSwitch() const { return m_antiAlias; }
   bool aaVisualize() const { return m_aaVisualize; }
   bool kdSwitch() const { return m_kdTree; }
-  // Backward-compatible alias for old single accel toggle.
   AccelMode accelMode() const { return m_tlasAccelMode; }
   AccelMode tlasAccelMode() const { return m_tlasAccelMode; }
   AccelMode blasAccelMode() const { return m_blasAccelMode; }
@@ -67,6 +66,8 @@ public:
   bool getHandleOverlap() const { return m_handleOverlap; }
   bool sincTexture() const { return m_sincTexture; }
   bool getGoop() const { return m_goop; }
+  bool getNormalMapping() const { return m_normalMapping; }
+  bool getParallaxMapping() const { return m_parallaxMapping; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -146,6 +147,8 @@ protected:
   bool m_handleOverlap = false;
   bool m_sincTexture = false;
   bool m_goop = false;  // translucent emissive "radioactive goop" along path
+  bool m_normalMapping = false;  // normal mapping
+  bool m_parallaxMapping = false;  // parallax mapping
   AccelMode m_tlasAccelMode = AccelMode::Wide8;
   AccelMode m_blasAccelMode = AccelMode::Wide8;
   bool m_neural = false;

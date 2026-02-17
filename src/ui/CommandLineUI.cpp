@@ -38,6 +38,8 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"sinc", no_argument, nullptr, 1006},
       {"goop", no_argument, nullptr, 1007},
       {"neural", no_argument, nullptr, 1008},
+      {"normal", no_argument, nullptr, 1009},
+      {"parallax", no_argument, nullptr, 1010},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -90,6 +92,13 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       break;
     case 1008: // --neural
       m_neural = true;
+      break;
+    case 1009: // --normal
+      m_normalMapping = true;
+      break;
+    case 1010: // --parallax
+      m_parallaxMapping = true;
+      m_normalMapping = true;
       break;
     default:
       // Oops; unknown argument

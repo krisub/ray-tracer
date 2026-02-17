@@ -249,6 +249,22 @@ public:
   void setUVCoordinates(const glm::dvec2 &coords) { uvCoordinates = coords; }
   /** @return glm::dvec2: the uv texture coordinates at this intersection */
   glm::dvec2 getUVCoordinates() const { return uvCoordinates; }
+
+  /**
+   * @brief set the tangent frame (dP/du, dP/dv) for normal mapping.
+   * Should be in object-local space; Geometry::intersect will transform to world.
+   */
+  void setTangentFrame(const glm::dvec3 &dPdu, const glm::dvec3 &dPdv) {
+    dPdu_ = dPdu;
+    dPdv_ = dPdv;
+    hasTangentFrame_ = true;
+  }
+  /** @return true if tangent frame was set (enables normal mapping) */
+  bool hasTangentFrame() const { return hasTangentFrame_; }
+  /** @return dP/du (tangent direction) */
+  glm::dvec3 getDpDu() const { return dPdu_; }
+  /** @return dP/dv (bitangent direction) */
+  glm::dvec3 getDpDv() const { return dPdv_; }
   /**
    * @brief sets the barycentric coordinates of the hit (for triangles).
    * @param weights the barycentric weights (u, v, w) or (alpha, beta, gamma).
@@ -287,6 +303,9 @@ private:
     N = other.N;
     bary = other.bary;
     uvCoordinates = other.uvCoordinates;
+    dPdu_ = other.dPdu_;
+    dPdv_ = other.dPdv_;
+    hasTangentFrame_ = other.hasTangentFrame_;
     if (other.material) {
       setMaterial(*other.material);
     } else {
@@ -299,6 +318,9 @@ private:
   glm::dvec3 N;             ///< surface normal at the hit
   glm::dvec2 uvCoordinates; ///< texture coordinates (u, v)
   glm::dvec3 bary;          ///< barycentric coordinates (for meshes)
+  glm::dvec3 dPdu_{0, 0, 0};  ///< dP/du for normal mapping
+  glm::dvec3 dPdv_{0, 0, 0};  ///< dP/dv for normal mapping
+  bool hasTangentFrame_ = false;  ///< true when dPdu/dPdv are valid
 
   // if this intersection has its own material (as opposed to one in its
   // associated object) as in the case where the material was interpolated

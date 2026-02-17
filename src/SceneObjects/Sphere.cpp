@@ -8,6 +8,28 @@
 
 using namespace std;
 
+namespace {
+// unit sphere: P(theta, phi) = (sin phi cos theta, sin phi sin theta, cos phi)
+// u = longitude, v = latitude
+void sphereUVAndTangentFrame(const glm::dvec3 &localHit, double &u, double &v,
+                             glm::dvec3 &dPdu, glm::dvec3 &dPdv) {
+  double x = localHit.x, y = localHit.y, z = localHit.z;
+  double phi = std::acos(glm::clamp(z, -1.0, 1.0));  // [0, pi], 0 = +Z
+  double theta = std::atan2(y, x);                     // [-pi, pi]
+  u = theta / (2.0 * M_PI);  // longitude -> position along each stripe
+  if (u < 0.0) u += 1.0;
+  v = 1.0 - phi / M_PI;  // latitude -> which horizontal band/stripe
+  double sinPhi = std::sin(phi);
+  double cosPhi = std::cos(phi);
+  double sinTheta = std::sin(theta);
+  double cosTheta = std::cos(theta);
+  if (sinPhi < 1e-10) sinPhi = 1e-10;
+  // dP/du: dtheta/du = 2pi. dP/dv: v = 1 - phi/pi => dphi/dv = -pi
+  dPdu = glm::dvec3(-sinPhi * sinTheta, sinPhi * cosTheta, 0.0) * (2.0 * M_PI);
+  dPdv = glm::dvec3(cosPhi * cosTheta, cosPhi * sinTheta, -sinPhi) * (-M_PI);
+}
+}  // namespace
+
 bool Sphere::sampleSurfacePoint(double u, double v, glm::dvec3 &worldPoint,
                                 glm::dvec3 &worldNormal,
                                 double &worldArea) const {

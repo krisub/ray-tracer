@@ -45,6 +45,10 @@ bool Geometry::intersect(ray &r, isect &i) const {
     // Transform the intersection point & normal returned back into
     // global space.
     i.setN(transform.localToGlobalCoordsNormal(i.getN()));
+    if (i.hasTangentFrame()) {
+      i.setTangentFrame(transform.localToGlobalCoordsTangent(i.getDpDu()),
+                        transform.localToGlobalCoordsTangent(i.getDpDv()));
+    }
     i.setT(i.getT() / length);
     rtrn = true;
   }

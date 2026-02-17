@@ -102,10 +102,83 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   */
   // std::cout << "shading at t=" << i.getT() << std::endl;
   glm::dvec3 hitPoint = r.at(i);
-  const glm::dvec3 &surfaceNormal = i.getN();  // already unit (intersection code)
+  glm::dvec3 surfaceNormal = i.getN();  // already unit (intersection code)
+
+  glm::dvec2 uv = i.getUVCoordinates();
+  isect iTex(i);
+
+  // Parallax mapping: offset UV based on view and height map (or normal map as fallback)
+  bool doParallax = traceUI && traceUI->getParallaxMapping() && i.hasTangentFrame() &&
+      (hasHeightMap() || hasNormalMap());
+  if (doParallax) {
+    glm::dvec3 viewDir = -r.getDirection();
+    glm::dvec3 dPdu = i.getDpDu();
+    glm::dvec3 dPdv = i.getDpDv();
+    // Fallback tangent when dPdu is degenerate (e.g. sphere poles) to avoid NaN
+    if (glm::length(dPdu) < 1e-6) {
+      glm::dvec3 up(0, 1, 0);
+      if (std::abs(glm::dot(surfaceNormal, up)) > 0.99)
+        up = glm::dvec3(0, 0, 1);
+      dPdu = glm::normalize(glm::cross(up, surfaceNormal));
+      dPdv = glm::cross(surfaceNormal, dPdu);
+    }
+    glm::dvec3 T = glm::normalize(dPdu -
+        surfaceNormal * glm::dot(surfaceNormal, dPdu));
+    glm::dvec3 B = glm::cross(surfaceNormal, T);
+    if (glm::dot(glm::cross(T, B), surfaceNormal) < 0.0)
+      B = -B;
+    glm::dvec3 viewDirTS(glm::dot(viewDir, T), glm::dot(viewDir, B),
+                  glm::dot(viewDir, surfaceNormal));
+    if (viewDirTS.z > 1e-6) {
+      // Height/depth drives offset magnitude. Use sampled value directly:
+      // Height map: white=high bumps → large offset. Normal map fallback: z~1 (flat faces) → large offset.
+      double height = hasHeightMap()
+          ? interp::luminance601(_heightMap->getMappedValue(uv))
+          : (0.5 + 0.5 * _normalMap->getMappedValue(uv).z);
+      glm::dvec2 offset = _parallaxScale * height * (glm::dvec2(viewDirTS.x, viewDirTS.y) / viewDirTS.z);
+      glm::dvec2 uvParallax = uv - offset;
+      // collapsing out-of-bounds UVs to 0/1 causes blur at top/bottom of objects
+      // discard fragments outside [0,1] and revert to original UV
+      if (uvParallax.x >= 0.0 && uvParallax.x <= 1.0 && uvParallax.y >= 0.0 && uvParallax.y <= 1.0) {
+        uv = uvParallax;
+      }
+      iTex.setUVCoordinates(uv);
+    }
+  }
+
+  // normal mapping: perturb surface normal using normal map when --normal
+  if (traceUI && traceUI->getNormalMapping() && hasNormalMap() &&
+      i.hasTangentFrame()) {
+    glm::dvec3 mapColor = _normalMap->getMappedValue(uv);
+    glm::dvec3 nTangent = 2.0 * mapColor - glm::dvec3(1.0, 1.0, 1.0);
+    nTangent.x *= _normalMapStrength;
+    nTangent.y *= _normalMapStrength;
+    nTangent = glm::normalize(nTangent);
+    glm::dvec3 dPdu = i.getDpDu();
+    if (glm::length(dPdu) < 1e-6) {
+      glm::dvec3 up(0, 1, 0);
+      if (std::abs(glm::dot(surfaceNormal, up)) > 0.99)
+        up = glm::dvec3(0, 0, 1);
+      dPdu = glm::normalize(glm::cross(up, surfaceNormal));
+    }
+    glm::dvec3 T = glm::normalize(dPdu -
+        surfaceNormal * glm::dot(surfaceNormal, dPdu));
+    glm::dvec3 B = glm::cross(surfaceNormal, T);
+    if (glm::dot(glm::cross(T, B), surfaceNormal) < 0.0)
+      B = -B;
+    glm::dvec3 perturbed = glm::normalize(T * nTangent.x + B * nTangent.y +
+        surfaceNormal * nTangent.z);
+    // blend toward geometric normal near UV seams (u=0/1, v=0/1) to avoid discontinuities
+    double seamU = std::min(uv.x, 1.0 - uv.x);
+    double seamV = std::min(uv.y, 1.0 - uv.y);
+    double seamDist = std::min(seamU, seamV);
+    double blend = (seamDist < 0.08) ? std::max(0.0, seamDist / 0.08) : 1.0;
+    surfaceNormal = glm::normalize(blend * perturbed + (1.0 - blend) * surfaceNormal);
+  }
+
   const glm::dvec3 cameraDir = -r.getDirection();  // ray dir is unit
 
-  glm::dvec3 color = ke(i) + ka(i) * scene->ambient();
+  glm::dvec3 color = ke(iTex) + ka(iTex) * scene->ambient();
 
   for (const auto &pLight : scene->getAllLights()) {
     const glm::dvec3 dirToLight = pLight->getDirection(hitPoint);  // already unit
@@ -127,7 +200,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     double diffuseReflection;
 
     // ADDED TO FIX CONE AND SPHERE AT THE SAME TIME
-    if (kt(i).x > 1e-6 || kt(i).y > 1e-6 || kt(i).z > 1e-6) {
+    if (kt(iTex).x > 1e-6 || kt(iTex).y > 1e-6 || kt(iTex).z > 1e-6) {
       diffuseReflection = glm::abs(diffuseDot);
     } else {
       diffuseReflection = std::max(0.0, diffuseDot);
@@ -137,12 +210,12 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     //   cout << "kd is " << kd(i) << endl;
 
     if (diffuseReflection > 0) {
-      glm::dvec3 diffuse = kd(i) * pLight->getColor() * diffuseReflection;
+      glm::dvec3 diffuse = kd(iTex) * pLight->getColor() * diffuseReflection;
       color += distAtten * shadowAtten * diffuse;
       if (traceUI && traceUI->getGoop() &&
           (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
            emissionAlongPath.z > 1e-9))
-        color += emissionAlongPath * kd(i) * diffuseReflection;
+        color += emissionAlongPath * kd(iTex) * diffuseReflection;
     }
 
     // only do specular if diffuse component exists
@@ -154,18 +227,18 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
     double specularReflection = glm::dot(reflectionVector, cameraDir);
     if (specularReflection > 0) {
-      double shine = shininess(i);
+      double shine = shininess(iTex);
       glm::dvec3 specular =
-          ks(i) * pLight->getColor() * pow(specularReflection, shine);
+          ks(iTex) * pLight->getColor() * pow(specularReflection, shine);
       color += distAtten * shadowAtten * specular;
       if (traceUI && traceUI->getGoop() &&
           (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
            emissionAlongPath.z > 1e-9))
-        color += emissionAlongPath * ks(i) * pow(specularReflection, shine);
+        color += emissionAlongPath * ks(iTex) * pow(specularReflection, shine);
     }
   }
 
-  // Area lights from emissive objects (only when --goop): sample surface, cast
+  // area lights from emissive objects (only when --goop): sample surface, cast
   // shadow ray; if we hit the emissive object we're lit, else blocked.
   // Disabled: spec wants path-integrated emission only, not area-light behavior.
   constexpr bool kUseEmissiveAsAreaLights = false;
@@ -245,19 +318,19 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
         continue;
       double diffuseDot = glm::dot(surfaceNormal, dirToLight);
       double diffuseReflection =
-          (kt(i).x > 1e-6 || kt(i).y > 1e-6 || kt(i).z > 1e-6)
+          (kt(iTex).x > 1e-6 || kt(iTex).y > 1e-6 || kt(iTex).z > 1e-6)
               ? std::abs(diffuseDot)
               : std::max(0.0, diffuseDot);
       if (diffuseReflection > 0)
-        color += geometryTerm * Le * kd(i) * diffuseReflection;
+        color += geometryTerm * Le * kd(iTex) * diffuseReflection;
       glm::dvec3 effectiveNormal =
           (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
       glm::dvec3 reflectionVector =
           (2.0 * std::abs(diffuseDot) * effectiveNormal) - dirToLight;
       double specularReflection = glm::dot(reflectionVector, cameraDir);
       if (specularReflection > 0)
-        color += geometryTerm * Le * ks(i) *
-                 std::pow(specularReflection, shininess(i));
+        color += geometryTerm * Le * ks(iTex) *
+                 std::pow(specularReflection, shininess(iTex));
     }
   }
   }

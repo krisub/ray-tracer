@@ -70,6 +70,8 @@ void TraceUI::loadFromJson(const char *file) {
   load(json, "aa_visualize", m_aaVisualize);
   load(json, "sinc_texture", m_sincTexture);
   load(json, "handle_overlap", m_handleOverlap);
+  load(json, "normal_mapping", m_normalMapping);
+  load(json, "parallax_mapping", m_parallaxMapping);
   const std::string accelMode = json.value("accel_mode", std::string("binary"));
   const std::string tlasAccelMode =
       json.value("tlas_accel_mode", accelMode);
