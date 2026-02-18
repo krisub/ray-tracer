@@ -55,13 +55,13 @@ public:
   void traceSetup(int w, int h);
 
   bool loadScene(const char *fn);
-  void setScene(Scene *s);
   bool sceneLoaded() { return scene != 0; }
 
   void setReady(bool ready) { m_bBufferReady = ready; }
   bool isReady() const { return m_bBufferReady; }
 
   const Scene &getScene() { return *scene; }
+  void setScene(Scene *s);
 
   std::atomic<bool> stopTrace{false};
 

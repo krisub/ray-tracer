@@ -214,6 +214,8 @@ ImplicitSurface *parseImplicitSurfaceBody(const json &j, ParseData &pd) {
     t = ImplicitSurface::Type::Goursat;
   } else if (typeStr == "blob") {
     t = ImplicitSurface::Type::Blob;
+  } else if (typeStr == "riemann") {
+    t = ImplicitSurface::Type::Riemann;
   } else {
     throw ParserException("Unknown implicit_surface type: " + typeStr);
   }

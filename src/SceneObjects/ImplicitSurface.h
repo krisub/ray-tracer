@@ -18,6 +18,7 @@ public:
     Torus,     // ((sqrt(x^2+y^2)-R)^2 + z^2 - r^2 = 0
     Goursat,   // x^4+y^4+z^4 - a(x^2+y^2+z^2)^2 + b(x^2+y^2+z^2) - c = 0
     Blob,      // sum of two Wyvill soft objects (blobby/metaball)
+    Riemann,   // example of a non-Lipschitz surface with a cusp: z^2 - x^3 - y^3 = 0 (Im(z^(2/3))-z=0 - Harnack tracing)
   };
 
   ImplicitSurface(Scene *scene, Material *mat, Type type);
@@ -49,6 +50,11 @@ public:
 
   void setLipschitzConstant(double L) { lipschitz_override_ = L; }
 
+  void setRiemannFraction(int n, int d) {
+    riemann_n = n;
+    riemann_d = d;
+  }
+
 protected:
   void glDrawLocal(int quality, bool actualMaterials,
                    bool actualTextures) const override;
@@ -76,6 +82,10 @@ private:
   double blob_radius2_ = 0.5;
   double blob_threshold_ = 0.5;  // isosurface sum(f_i) = T
 
+  // default riemann fraction is gonna be 2/3
+  int riemann_n = 2;
+  int riemann_d = 3;
+
   double lipschitz_override_ = 0.0;
 
   double eval(glm::dvec3 p) const;
@@ -83,6 +93,7 @@ private:
   double lipschitzConstant() const;
   bool sphereTrace(ray &r, isect &i, double tMin, double tMax) const;
   BoundingBox getLocalBoundingBoxImpl() const;
+  bool harnackTrace(ray &r, isect &i, double tMin, double tMax) const;
 };
 
 #endif

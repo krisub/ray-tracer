@@ -131,7 +131,7 @@ protected:
   bool m_kdTree = true;        // use kd-tree?
   bool m_shadows = true;       // compute shadows?
   bool m_smoothshade = true;   // turn on/off smoothshading?
-  bool m_backface = true;      // cull backfaces?
+  bool m_backface = false;      // cull backfaces?
   bool m_usingCubeMap = false; // render with cubemap
   bool m_internalReflection =
       true; // Enable reflection inside a translucent object.

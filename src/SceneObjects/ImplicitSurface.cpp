@@ -1,15 +1,57 @@
 #define _USE_MATH_DEFINES
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 #include "ImplicitSurface.h"
 #include "../scene/ray.h"
 
 namespace {
-
+constexpr double THRESHOLD = 1e-5;
 constexpr double EPSILON = 1e-8; 
 constexpr double NORMAL_EPS = 1e-6;
 constexpr int MAX_STEPS = 1024;
+
+double evalRiemann(const glm::dvec3 &p) {
+  const double r = std::sqrt(p.x * p.x + p.y * p.y);
+  double theta = std::atan2(p.y, p.x);
+  if (theta < 0.0)
+    theta += 2.0 * M_PI;
+  return std::pow(r, 2.0 / 3.0) * std::sin((2.0 * theta) / 3.0) - p.z;
+}
+
+bool refineRiemannHit(const glm::dvec3 &o, const glm::dvec3 &d,
+                      double &ta, double &tb) {
+  double fa = evalRiemann(o + ta * d);
+  double fb = evalRiemann(o + tb * d);
+  if (fa == 0.0)
+    return true;
+  if (fb == 0.0) {
+    ta = tb;
+    return true;
+  }
+  if (fa * fb > 0.0)
+    return false;
+
+  for (int it = 0; it < 24; ++it) {
+    const double tm = 0.5 * (ta + tb);
+    const double fm = evalRiemann(o + tm * d);
+    if (std::abs(fm) < 1e-6 || std::abs(tb - ta) < 1e-6) {
+      ta = tm;
+      return true;
+    }
+    if (fa * fm <= 0.0) {
+      tb = tm;
+      fb = fm;
+    } else {
+      ta = tm;
+      fa = fm;
+    }
+  }
+
+  ta = 0.5 * (ta + tb);
+  return true;
+}
 
 } // namespace
 
@@ -45,6 +87,8 @@ double ImplicitSurface::eval(glm::dvec3 p) const {
     double r2_2 = glm::dot(p - blob_c2_, p - blob_c2_);
     return soft(r1_2, b1_2) + soft(r2_2, b2_2) - blob_threshold_;
   }
+  case Type::Riemann:
+    return evalRiemann(p);
   }
   return 0;
 }
@@ -106,8 +150,118 @@ double ImplicitSurface::lipschitzConstant() const {
     double minR = std::min(blob_radius1_, blob_radius2_);
     return std::max(4.0, 1.0 / (minR * minR));
   }
+  case Type::Riemann:
+    return 8.0; // not going to sphere trace but here anyway
   }
   return 4.0;
+}
+
+bool ImplicitSurface::harnackTrace(ray &r, isect &i, double tMin,
+                                   double tMax) const {
+  double t = tMin;
+  const glm::dvec3 o = r.getPosition();
+  const glm::dvec3 d = r.getDirection();
+  
+  // Prevent self-intersection by starting slightly off the surface
+  if (t < 1e-3) t = 1e-3;
+
+  for (int step = 0; step < MAX_STEPS && t < tMax; ++step) {
+    const glm::dvec3 p = o + t * d;
+    const double f = evalRiemann(p);
+
+    // 1. Check for intersection
+    // Only accept hit if we have moved at least a little (avoid self-shadowing)
+    if (std::abs(f) < THRESHOLD) {
+        if (step > 0 || t > 1e-2) {
+            glm::dvec3 g = gradient(p);
+            // Flip normal if necessary
+            if (glm::dot(g, d) > 0) g = -g; 
+
+
+            std::cout << "Riemann hit at t=" << t << ", f=" << f << ", grad=(" << g.x << ", " << g.y << ", " << g.z << ")" << std::endl;
+
+            i.setObject(this);
+            i.setMaterial(this->getMaterial());
+            i.setT(t);
+            i.setN(glm::normalize(g));
+            i.setUVCoordinates(glm::dvec2(0.5, 0.5));
+            return true;
+        }
+    }
+
+    // 2. Harnack Ball Radius
+    const double rCyl = std::sqrt(p.x * p.x + p.y * p.y);
+    // Keep ball away from singularity at r=0
+    const double R = std::max(1e-4, 0.5 * rCyl);
+
+    // 3. Compute Lower Bound C
+    double C;
+    if (f >= 0.0) {
+      C = -std::pow(rCyl + R, 2.0 / 3.0) - (p.z + R) - 0.5;
+    } else {
+      C = (p.z - R) - std::pow(rCyl + R, 2.0 / 3.0) - 0.5;
+    }
+
+    double stepSize;
+
+    // 4. Determine Step Size
+    if (C > 0.0) {
+        // If lower bound is positive, the surface is NOT in this ball.
+        // We can safely step nearly the full radius.
+        stepSize = 0.9 * R;
+    } else {
+        // The surface might be in the ball. Use Harnack acceleration.
+        // We target the zero of the positive harmonic function v = |f| - C
+        const double Ucurr = std::abs(f) - C;
+        const double Utarg = -C; // We want to reach |f|=0, so v = -C
+
+        // Default fallback if math fails
+        stepSize = 0.1 * R; 
+
+        if (Utarg > 1e-12) {
+            const double A = Ucurr / Utarg;
+            if (A > 1.0) {
+                const double num = 2.0 * R * (A - 1.0);
+                const double den = A + 2.0 + std::sqrt(A * A + 8.0 * A);
+                stepSize = num / den;
+            }
+        }
+    }
+
+    // 5. Clamping
+    stepSize = std::clamp(stepSize, 1e-4, 2.0);
+
+    const double tNext = t + stepSize;
+
+    // 6. Check for overstep (Root Refinement)
+    if (tNext < tMax) {
+        const double fNext = evalRiemann(o + tNext * d);
+        if (f * fNext < 0.0) {
+            double ta = t; 
+            double tb = tNext;
+            if (refineRiemannHit(o, d, ta, tb)) {
+                glm::dvec3 pRef = o + ta * d;
+                glm::dvec3 g = gradient(pRef);
+                if (glm::dot(g, d) > 0) g = -g;
+
+                std::cout << "Riemann refined hit at t=" << ta
+                  << ", grad=(" << g.x << ", " << g.y << ", " << g.z << ")"
+                  << std::endl;
+
+                i.setObject(this);
+                i.setMaterial(this->getMaterial());
+                i.setT(ta);
+                i.setN(glm::normalize(g));
+                i.setUVCoordinates(glm::dvec2(0.5, 0.5));
+                return true;
+            }
+        }
+    }
+
+    t = tNext;
+  }
+
+  return false;
 }
 
 bool ImplicitSurface::sphereTrace(ray &r, isect &i, double tMin,
@@ -153,6 +307,10 @@ bool ImplicitSurface::intersectLocal(ray &r, isect &i) const {
   if (tMin < RAY_EPSILON)
     tMin = RAY_EPSILON;
 
+  if (type_ == Type::Riemann) {
+    return harnackTrace(r, i, tMin, tMax);
+  }
+
   return sphereTrace(r, i, tMin, tMax);
 }
 
@@ -181,6 +339,12 @@ BoundingBox ImplicitSurface::getLocalBoundingBoxImpl() const {
     glm::dvec3 hi = glm::max(blob_c1_, blob_c2_) + glm::dvec3(r);
     b.setMin(lo);
     b.setMax(hi);
+    break;
+  }
+  case Type::Riemann: {
+    double extent = 20.0;
+    b.setMin(glm::dvec3(-extent, -extent, -extent));
+    b.setMax(glm::dvec3(extent, extent, extent));
     break;
   }
   }
