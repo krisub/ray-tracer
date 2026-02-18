@@ -1,4 +1,5 @@
 #include "JsonParser.h"
+#include "ExprEval.h"
 #include "ParserException.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -47,6 +48,21 @@ static void from_json(const json &j, glm::dvec3 &vec) {
 
 bool hasKey(const json &obj, const std::string &key) {
   return obj.find(key) != obj.end();
+}
+
+// substitute expression strings with evaluated numbers for animation (variable t)
+void substituteExpressions(json &j, double t) {
+  if (j.is_string()) {
+    auto opt = ExprEval::eval(j.get<std::string>(), t);
+    if (opt.has_value())
+      j = *opt;
+  } else if (j.is_object()) {
+    for (auto it = j.begin(); it != j.end(); ++it)
+      substituteExpressions(it.value(), t);
+  } else if (j.is_array()) {
+    for (auto &el : j)
+      substituteExpressions(el, t);
+  }
 }
 
 glm::dmat4 ParseData::getCurrentTransform() {
@@ -420,10 +436,7 @@ std::vector<Geometry *> parseTransform(const json &j, ParseData &pd) {
   return geoms;
 }
 
-Scene *JsonParser::parseScene() {
-  // Allow comments and exceptions while parsing
-  json j = json::parse(this->contents);
-
+Scene *JsonParser::parseSceneFromJson(const json &j) {
   Scene *scene = new Scene();
   ParseData pd;
   pd.s = scene;
@@ -489,8 +502,12 @@ Scene *JsonParser::parseScene() {
     }
   }
 
-
   return scene;
+}
+
+Scene *JsonParser::parseScene() {
+  json j = json::parse(this->contents);
+  return parseSceneFromJson(j);
 }
 
 // Helper function to set parts of a Material from a tinyobj material

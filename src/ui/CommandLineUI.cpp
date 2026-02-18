@@ -13,6 +13,12 @@ extern int getopt(int argc, char **argv, const char *optstring);
 #include <getopt.h>
 
 #include "../fileio/images.h"
+#include "../parser/JsonParser.h"
+#include "../parser/ParserException.h"
+#include "../scene/scene.h"
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include "CommandLineUI.h"
 
@@ -40,6 +46,9 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"neural", no_argument, nullptr, 1008},
       {"normal", no_argument, nullptr, 1009},
       {"parallax", no_argument, nullptr, 1010},
+      {"animation", required_argument, nullptr, 1011},
+      {"t-start", required_argument, nullptr, 1012},
+      {"t-end", required_argument, nullptr, 1013},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -100,6 +109,17 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       m_parallaxMapping = true;
       m_normalMapping = true;
       break;
+    case 1011: // --animation
+      m_animationFrames = atoi(optarg);
+      if (m_animationFrames < 1)
+        m_animationFrames = 1;
+      break;
+    case 1012: // --t-start
+      m_tStart = atof(optarg);
+      break;
+    case 1013: // --t-end
+      m_tEnd = atof(optarg);
+      break;
     default:
       // Oops; unknown argument
       std::cerr << "Invalid argument: '" << i << "'." << std::endl;
@@ -125,6 +145,11 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
 
 int CommandLineUI::run() {
   assert(raytracer != 0);
+
+  if (m_animationFrames > 0) {
+    return runAnimation();
+  }
+
   raytracer->loadScene(rayName);
 
   if (raytracer->sceneLoaded()) {
@@ -178,17 +203,108 @@ int CommandLineUI::run() {
       }
     }
 
-    // [[maybe_unused]]
-    // double t = (double)(end - start) / CLOCKS_PER_SEC;
-    // int totalRays = TraceUI::resetCount();
-    // std::cout << "total time = " << t << " seconds, rays traced = " <<
-    // totalRays << std::endl;
-
     return 0;
   } else {
     std::cerr << "Unable to load ray file '" << rayName << "'" << std::endl;
     return (1);
   }
+}
+
+int CommandLineUI::runAnimation() {
+  using json = nlohmann::json;
+
+  std::string path(rayName);
+  size_t slash = path.find_last_of("\\/");
+  std::string sceneDir = (slash != std::string::npos) ? path.substr(0, slash) : ".";
+
+  std::ifstream ifs(rayName);
+  if (!ifs) {
+    std::cerr << "Unable to open scene file '" << rayName << "'" << std::endl;
+    return 1;
+  }
+  std::ostringstream oss;
+  oss << ifs.rdbuf();
+  std::string contents = oss.str();
+  ifs.close();
+
+  json j;
+  try {
+    j = json::parse(contents);
+  } catch (const json::exception &e) {
+    std::cerr << "Invalid JSON in scene file: " << e.what() << std::endl;
+    return 1;
+  }
+
+  JsonParser parser(sceneDir);
+  int width = m_nSize;
+  const int numFrames = m_animationFrames;
+  const double tStart = m_tStart;
+  const double tEnd = m_tEnd;
+
+  {
+    std::filesystem::path outPath(imgName);
+    auto parent = outPath.parent_path();
+    if (!parent.empty())
+      std::filesystem::create_directories(parent);
+  }
+
+  for (int frame = 0; frame < numFrames; ++frame) {
+    double t = (numFrames > 1)
+        ? (tStart + (tEnd - tStart) * (double)frame / (numFrames - 1))
+        : tStart;
+    json j2 = j;
+    substituteExpressions(j2, t);
+
+    Scene *sc = nullptr;
+    try {
+      sc = parser.parseSceneFromJson(j2);
+    } catch (const ParserException &pe) {
+      std::cerr << "Frame " << frame << " (t=" << t << "): " << pe.message() << std::endl;
+      return 1;
+    } catch (const json::exception &je) {
+      std::cerr << "Frame " << frame << " (t=" << t << "): " << je.what() << std::endl;
+      return 1;
+    }
+    raytracer->setScene(sc);
+
+    int height = (int)(width / raytracer->aspectRatio() + 0.5);
+    raytracer->traceSetup(width, height);
+    raytracer->traceImage(width, height);
+    raytracer->waitRender();
+    if (aaSwitch()) {
+      if (m_antialiasingStochastic)
+        raytracer->aaStochasticImage();
+      else if (m_antialiasingAdaptive)
+        raytracer->aaAdaptiveImage();
+      else if (m_fxAntialiasing)
+        raytracer->aaFastApproxImage();
+      else if (m_neural)
+        raytracer->aaNeuralImage();
+      else
+        raytracer->aaImage();
+      raytracer->waitRender();
+    }
+
+    unsigned char *buf = nullptr;
+    int outW = 0, outH = 0;
+    raytracer->getBuffer(buf, outW, outH);
+    if (buf && outW > 0 && outH > 0) {
+      std::string frameName(imgName);
+      size_t dot = frameName.find_last_of('.');
+      std::string base = (dot != std::string::npos) ? frameName.substr(0, dot) : frameName;
+      std::string ext = (dot != std::string::npos) ? frameName.substr(dot) : ".png";
+      char fn[512];
+      snprintf(fn, sizeof(fn), "%s_%04d%s", base.c_str(), frame, ext.c_str());
+      try {
+        writeImage(fn, outW, outH, buf);
+        std::cerr << "Wrote frame " << frame << " (t=" << t << ") -> " << fn << std::endl;
+      } catch (const std::string &e) {
+        std::cerr << "Frame " << frame << ": failed to write " << fn << ": " << e << std::endl;
+        return 1;
+      }
+    }
+  }
+  return 0;
 }
 
 void CommandLineUI::alert(const string &msg) { std::cerr << msg << std::endl; }

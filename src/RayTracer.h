@@ -55,6 +55,7 @@ public:
   void traceSetup(int w, int h);
 
   bool loadScene(const char *fn);
+  void setScene(Scene *s);
   bool sceneLoaded() { return scene != 0; }
 
   void setReady(bool ready) { m_bBufferReady = ready; }

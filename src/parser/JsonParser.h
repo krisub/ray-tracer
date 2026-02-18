@@ -59,6 +59,9 @@ struct ParseData {
   glm::dmat4 getCurrentTransform();
 };
 
+/** replace expression strings in json with evaluated numbers (variable t) */
+void substituteExpressions(json &j, double t);
+
 Camera parseCamera(const json &j);
 MaterialParameter parseMaterialParameter(const json &j, ParseData &pd);
 Material parseMaterial(const json &j, ParseData &pd);
@@ -91,8 +94,13 @@ public:
     std::ostringstream sstr;
     sstr << ifs.rdbuf();
     this->contents = sstr.str();
-  };
+  }
 
+  /** constructor for animation: path only (scene_dir) use parseSceneFromJson(j) */
+  explicit JsonParser(std::string pathToJson) : fileDirPath(std::move(pathToJson)) {}
+
+  /** parse scene from pre-parsed json (after substituteExpressions for animation) */
+  Scene *parseSceneFromJson(const json &j);
   Scene *parseScene();
 
 private:

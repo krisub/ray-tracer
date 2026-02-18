@@ -527,6 +527,8 @@ double RayTracer::aspectRatio() {
   return sceneLoaded() ? scene->getCamera().getAspectRatio() : 1;
 }
 
+void RayTracer::setScene(Scene *s) { scene.reset(s); }
+
 bool RayTracer::loadScene(const char *fn) {
   ifstream ifs(fn);
   if (!ifs) {
