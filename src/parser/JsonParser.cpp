@@ -221,6 +221,16 @@ ImplicitSurface *parseImplicitSurfaceBody(const json &j, ParseData &pd) {
   }
 
   auto *surf = new ImplicitSurface(pd.s, &m, t);
+  if (t == ImplicitSurface::Type::Riemann) {
+    if (j.find("power") != j.end() && j["power"].is_array()) {
+        auto p = j["power"];
+        if (p.size() >= 2) {
+            int n = p[0].get<int>();
+            int d = p[1].get<int>();
+            surf->setRiemannFraction(n, d);
+        }
+    }
+  }
   surf->setTransform(pd.getCurrentTransform());
 
   IGNORE_MISSING(surf->setRadius(j.at("radius").get<double>()));
