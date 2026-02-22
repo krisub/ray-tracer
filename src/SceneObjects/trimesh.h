@@ -8,7 +8,7 @@
 #include <mutex>
 #include <vector>
 
-#include "../scene/kdTree.h"
+// #include "../scene/kdTree.h"
 #include "../scene/material.h"
 #include "../scene/ray.h"
 #include "../scene/scene.h"

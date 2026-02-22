@@ -335,6 +335,17 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   }
   }
 
+  if (!scene->causticMap.empty() && traceUI &&
+      (traceUI->tracerMode() == TraceUI::TracerMode::Path ||
+       traceUI->tracerMode() == TraceUI::TracerMode::Distributed)) {
+    glm::dvec3 causticIrradiance = scene->causticMap.irradianceEstimate(
+        hitPoint, surfaceNormal,
+        scene->causticSearchRadius,
+        scene->causticGatherCount);
+
+    color += kd(iTex) * causticIrradiance;
+  }
+
   return color;
 }
 

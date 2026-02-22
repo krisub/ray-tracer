@@ -10,3 +10,5 @@ noaa
 run.sh
 out.png
 frames
+out.txt
+out*.png

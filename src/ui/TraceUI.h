@@ -77,6 +77,9 @@ public:
   int getPathSPP() const { return m_pathSPP; }
   int getMotionBlurSamples() const { return m_motionBlurSamples; }
   TracerMode tracerMode() const { return m_tracerMode; }
+  int getCausticPhotons() const { return m_causticPhotons; }
+  double getCausticRadius() const { return m_causticRadius; }
+  int getCausticGather() const { return m_causticGather; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -166,7 +169,10 @@ protected:
   int m_giSamples = 16;         // global illumination samples per shading point
   double m_giIntensity = 1.0;   // global illumination intensity multiplier
   int m_motionBlurSamples = 16;  // temporal samples for motion blur
-  int m_pathSPP = 1024;           // samples per pixel for path tracing
+  int m_pathSPP = 128;           // samples per pixel for path tracing
+  int m_causticPhotons = 0;        // number of caustic photons to emit (0=disabled)
+  double m_causticRadius = 0.5;    // search radius for caustic photon gathering
+  int m_causticGather = 100;       // max photons to gather per shading point
 
   std::unique_ptr<CubeMap> cubemap;
 

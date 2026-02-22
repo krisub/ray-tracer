@@ -89,6 +89,12 @@ void TraceUI::loadFromJson(const char *file) {
   m_areaLightSamples = std::max(1, m_areaLightSamples);
   m_giSamples = std::max(0, m_giSamples);
   m_motionBlurSamples = std::max(1, m_motionBlurSamples);
+  load(json, "caustic_photons", m_causticPhotons);
+  load(json, "caustic_radius", m_causticRadius);
+  load(json, "caustic_gather", m_causticGather);
+  m_causticPhotons = std::max(0, m_causticPhotons);
+  m_causticGather = std::max(1, m_causticGather);
+  if (m_causticRadius < 1e-6) m_causticRadius = 0.5;
   const std::string accelMode = json.value("accel_mode", std::string("binary"));
   const std::string tlasAccelMode =
       json.value("tlas_accel_mode", accelMode);

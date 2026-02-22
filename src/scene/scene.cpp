@@ -4,7 +4,6 @@
 #include "../SceneObjects/trimesh.h"
 #include "../ui/TraceUI.h"
 #include "bvh.h"
-#include "kdTree.h"
 #include "light.h"
 #include "ReactionDiffusionTexture.h"
 #include "scene.h"

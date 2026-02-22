@@ -158,6 +158,8 @@ private:
     areaLightSamples = std::max(1, numSamples);
   }
 
+  void emitCausticPhotons();
+
   std::unique_ptr<Scene> scene;
   std::vector<unsigned char> buffer;
   double rayTermThresh;    // adaptive ray termination (0=off)
@@ -182,6 +184,7 @@ private:
   bool usePathIntegrator;   // true = true path tracing (tracePathRay)
   bool useDistributedGI;    // true = distributed ray tracing with GI (computeIndirectIllumination)
   int pathSPP;              // samples per pixel for full path tracing
+  int causticPhotons;       // number of caustic photons to emit (0=disabled)
 
   std::unique_ptr<LensAperture> dofLens;           // depth of field lens aperture
   std::unique_ptr<TemporalSampler> temporalSampler; // motion blur temporal sampling

@@ -21,6 +21,7 @@
 #include "camera.h"
 #include "material.h"
 #include "ray.h"
+#include "../PhotonMap.h"
 
 #include <glm/geometric.hpp>
 #include <glm/mat3x3.hpp>
@@ -292,6 +293,10 @@ public:
   }
 
   mutable std::vector<std::pair<ray *, isect *>> intersectCache;
+
+  PhotonMap causticMap;
+  double causticSearchRadius = 0.5;
+  int causticGatherCount = 100;
 };
 
 #endif // __SCENE_H__

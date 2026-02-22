@@ -52,6 +52,9 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"path", no_argument, nullptr, 1014},
       {"spp", required_argument, nullptr, 1015},
       {"distributed", no_argument, nullptr, 1016},
+      {"caustic-photons", required_argument, nullptr, 1017},
+      {"caustic-radius", required_argument, nullptr, 1018},
+      {"caustic-gather", required_argument, nullptr, 1019},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -131,6 +134,15 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       break;
     case 1016: // --distributed
       m_forceDistributed = true;
+      break;
+    case 1017: // --caustic-photons
+      m_causticPhotons = atoi(optarg);
+      break;
+    case 1018: // --caustic-radius
+      m_causticRadius = atof(optarg);
+      break;
+    case 1019: // --caustic-gather
+      m_causticGather = atoi(optarg);
       break;
     default:
       // Oops; unknown argument

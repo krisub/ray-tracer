@@ -529,12 +529,14 @@ glm::dvec3 RayTracer::tracePathRay(ray &r, int maxDepth) {
     glm::dvec3 ks = m.ks(is);
     double shininess = std::max(1.0, m.shininess(is));
     glm::dvec3 kt = m.kt(is);
+    glm::dvec3 kr = m.kr(is);
 
     double kdMax = std::max({kd.x, kd.y, kd.z});
     double ksMax = std::max({ks.x, ks.y, ks.z});
     double ktMax = std::max({kt.x, kt.y, kt.z});
+    double krMax = std::max({kr.x, kr.y, kr.z});
 
-    if (kdMax + ksMax + ktMax < 1e-9)
+    if (kdMax + ksMax + ktMax + krMax < 1e-9)
       break;
 
     if (kdMax + ksMax > 1e-9) {
@@ -553,8 +555,6 @@ glm::dvec3 RayTracer::tracePathRay(ray &r, int maxDepth) {
         if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
           continue;
 
-        // Phong convention for NEE direct lighting (matches scene authoring).
-        // Throughput uses PBR BRDF (kd/pi) for energy-conserving indirect bounces.
         glm::dvec3 directContrib = kd * NdotL;
 
         if (ksMax > 1e-9) {
@@ -571,16 +571,27 @@ glm::dvec3 RayTracer::tracePathRay(ray &r, int maxDepth) {
       }
     }
 
+    // caustics
+    if (!scene->causticMap.empty() && kdMax > 1e-9) {
+      glm::dvec3 causticIrradiance = scene->causticMap.irradianceEstimate(
+          hitPoint, N,
+          scene->causticSearchRadius,
+          scene->causticGatherCount);
+      radiance += throughput * kd * causticIrradiance;
+    }
+
     double kdLum = 0.299 * kd.x + 0.587 * kd.y + 0.114 * kd.z;
     double ksLum = 0.299 * ks.x + 0.587 * ks.y + 0.114 * ks.z;
     double ktLum = 0.299 * kt.x + 0.587 * kt.y + 0.114 * kt.z;
-    double totalLum = kdLum + ksLum + ktLum;
+    double krLum = 0.299 * kr.x + 0.587 * kr.y + 0.114 * kr.z;
+    double totalLum = kdLum + ksLum + ktLum + krLum;
     if (totalLum < 1e-10)
       break;
 
     double pDiffuse = kdLum / totalLum;
     double pSpecular = ksLum / totalLum;
-    // pTransmit = ktLum / totalLum (implicit: 1 - pDiffuse - pSpecular)
+    double pMirror = krLum / totalLum;
+    // pTransmit = ktLum / totalLum (implicit: 1 - pDiffuse - pSpecular - pMirror)
 
     double xi = unifDist(rng);
     glm::dvec3 wi;
@@ -643,10 +654,15 @@ glm::dvec3 RayTracer::tracePathRay(ray &r, int maxDepth) {
       throughput *= brdfVal * cosTheta / mixedPdf;
       lastBounceSpecular = (shininess > 50.0);
 
+    } else if (xi < pDiffuse + pSpecular + pMirror) {
+      wi = computeReflectionDirection(-wo, N);
+      throughput *= kr / (krLum / totalLum);
+      lastBounceSpecular = true;
+
     } else {
       double ior = m.index(is);
       double iorRatio = backfacing ? (ior / 1.0) : (1.0 / ior);
-      glm::dvec3 normalForRefract = backfacing ? -N : N;
+      glm::dvec3 normalForRefract = N;
 
       glm::dvec3 refrDir =
           computeRefractionDirection(-wo, normalForRefract, iorRatio);
@@ -917,9 +933,219 @@ RayTracer::RayTracer()
     buffer_width(0), buffer_height(0),
       m_bBufferReady(false), goopEnabled(false), giNumSamples(0), 
       giIntensity(1.0), areaLightSamples(1), usePathIntegrator(false),
-      useDistributedGI(false), pathSPP(64) {}
+      useDistributedGI(false), pathSPP(64), causticPhotons(0) {}
 
 RayTracer::~RayTracer() {}
+
+
+void RayTracer::emitCausticPhotons() {
+  if (!scene || causticPhotons <= 0) return;
+
+  scene->causticMap = PhotonMap();
+  scene->causticSearchRadius = traceUI->getCausticRadius();
+  scene->causticGatherCount = traceUI->getCausticGather();
+
+  const int maxBounces = std::max(traceUI->getDepth(), 10);
+  const auto &lights = scene->getAllLights();
+  if (lights.empty()) return;
+
+
+  std::vector<const PointLight *> pointLights;
+  for (const auto *light : lights) {
+    if (auto *pl = dynamic_cast<const PointLight *>(light))
+      pointLights.push_back(pl);
+  }
+  if (pointLights.empty()) return;
+  struct SpecTarget {
+    glm::dvec3 center;
+    double radius;
+  };
+  std::vector<SpecTarget> specTargets;
+
+  for (auto it = scene->beginObjects(); it != scene->endObjects(); ++it) {
+    const SceneObject *obj = dynamic_cast<const SceneObject *>(*it);
+    if (!obj) continue;
+    const Material &mat = obj->getMaterial();
+    if (!mat.Recur()) continue;
+
+    if (obj->hasBoundingBoxCapability()) {
+      const BoundingBox &bb = obj->getBoundingBox();
+      glm::dvec3 bbMin = bb.getMin();
+      glm::dvec3 bbMax = bb.getMax();
+      glm::dvec3 center = 0.5 * (bbMin + bbMax);
+      double radius = 0.5 * glm::length(bbMax - bbMin);
+      if (radius > 1e-6) {
+        specTargets.push_back({center, radius});
+      }
+    }
+  }
+
+  if (specTargets.empty()) {
+    std::cerr << "[caustics] no specular objects found, skipping." << std::endl;
+    return;
+  }
+
+  const int totalPhotons = causticPhotons;
+  const int photonsPerLightTarget =
+      totalPhotons / static_cast<int>(pointLights.size() * specTargets.size());
+  if (photonsPerLightTarget <= 0) return;
+
+  scene->causticMap.reserve(totalPhotons);
+
+  int numThreads = std::max(1u, threads);
+  std::vector<std::vector<Photon>> threadPhotons(numThreads);
+
+  for (const PointLight *pl : pointLights) {
+    const glm::dvec3 lightPos = pl->getPosition();
+    const glm::dvec3 lightColor = pl->getColor();
+
+    for (const auto &target : specTargets) {
+      glm::dvec3 toTarget = target.center - lightPos;
+      double dist = glm::length(toTarget);
+      if (dist < 1e-6) continue;
+
+      double sinHalf = std::min(1.0, target.radius / dist);
+      double cosHalf = std::sqrt(1.0 - sinHalf * sinHalf);
+
+      double solidAngle = 2.0 * M_PI * (1.0 - cosHalf);
+
+      double distAtten = pl->distanceAttenuation(target.center);
+      glm::dvec3 photonPower =
+          lightColor * solidAngle * (dist * dist) * distAtten
+          / static_cast<double>(photonsPerLightTarget);
+
+      glm::dvec3 w = toTarget / dist;
+      glm::dvec3 u, v;
+      if (std::abs(w.x) < 0.9) {
+        u = glm::normalize(glm::cross(glm::dvec3(1, 0, 0), w));
+      } else {
+        u = glm::normalize(glm::cross(glm::dvec3(0, 1, 0), w));
+      }
+      v = glm::cross(w, u);
+
+      #pragma omp parallel
+      {
+        int tid = 0;
+        #ifdef _OPENMP
+        tid = omp_get_thread_num();
+        #endif
+        std::mt19937 rng(42 + tid * 1000 +
+                         static_cast<int>(reinterpret_cast<uintptr_t>(pl) & 0xFFFF) +
+                         static_cast<int>(reinterpret_cast<uintptr_t>(&target) & 0xFFFF));
+        std::uniform_real_distribution<double> dist01(0.0, 1.0);
+
+        #pragma omp for schedule(dynamic, 256)
+        for (int p = 0; p < photonsPerLightTarget; ++p) {
+          double cosTheta = 1.0 - dist01(rng) * (1.0 - cosHalf);
+          double sinTheta = std::sqrt(1.0 - cosTheta * cosTheta);
+          double phi = 2.0 * M_PI * dist01(rng);
+          glm::dvec3 dir = sinTheta * std::cos(phi) * u +
+                           sinTheta * std::sin(phi) * v +
+                           cosTheta * w;
+          dir = glm::normalize(dir);
+
+          ray photonRay(lightPos + dir * RAY_EPSILON, dir,
+                        glm::dvec3(1.0), ray::VISIBILITY);
+          glm::dvec3 power = photonPower;
+          bool hadSpecularBounce = false;
+
+          for (int bounce = 0; bounce < maxBounces; ++bounce) {
+            isect hit;
+            if (!scene->intersect(photonRay, hit))
+              break;
+
+            const Material &mat = hit.getMaterial();
+            glm::dvec3 hitPoint = photonRay.at(hit);
+            glm::dvec3 normal = hit.getN();
+
+            glm::dvec3 kd = mat.kd(hit);
+            glm::dvec3 kr = mat.kr(hit);
+            glm::dvec3 kt = mat.kt(hit);
+            double kdLum = 0.299 * kd.x + 0.587 * kd.y + 0.114 * kd.z;
+            double krLum = 0.299 * kr.x + 0.587 * kr.y + 0.114 * kr.z;
+            double ktLum = 0.299 * kt.x + 0.587 * kt.y + 0.114 * kt.z;
+            double totalLum = kdLum + krLum + ktLum;
+
+            if (totalLum < 1e-10) break;
+
+            if (hadSpecularBounce && kdLum > 1e-6) {
+              Photon stored;
+              stored.position = hitPoint;
+              stored.power = power;
+              stored.incomingDir = photonRay.getDirection();
+              stored.splitAxis = 0;
+              threadPhotons[tid].push_back(stored);
+              break;
+            }
+
+            if (bounce >= 3) {
+              double survival = std::min(0.9, totalLum);
+              if (dist01(rng) > survival) break;
+              power /= survival;
+            }
+
+            double xi = dist01(rng) * totalLum;
+
+            if (xi < krLum) {
+              // Specular reflection
+              hadSpecularBounce = true;
+              glm::dvec3 reflDir = computeReflectionDirection(
+                  photonRay.getDirection(), normal);
+              power *= kr;
+              photonRay = ray(hitPoint + reflDir * RAY_EPSILON, reflDir,
+                              glm::dvec3(1.0), ray::REFLECTION);
+            } else if (xi < krLum + ktLum) {
+              // Specular refraction
+              hadSpecularBounce = true;
+              double ior = mat.index(hit);
+              double cosI = glm::dot(normal, photonRay.getDirection());
+              double iorRatio;
+              glm::dvec3 normalForRefraction;
+              if (cosI < 0) {
+                iorRatio = 1.0 / ior;
+                normalForRefraction = normal;
+              } else {
+                iorRatio = ior;
+                normalForRefraction = -normal;
+              }
+              glm::dvec3 refrDir = computeRefractionDirection(
+                  photonRay.getDirection(), normalForRefraction, iorRatio);
+              if (glm::length(refrDir) < 1e-10) {
+                // Total internal reflection
+                glm::dvec3 reflDir = computeReflectionDirection(
+                    photonRay.getDirection(), normalForRefraction);
+                power *= kr.x > 1e-6 || kr.y > 1e-6 || kr.z > 1e-6 ? kr : kt;
+                photonRay = ray(hitPoint + reflDir * RAY_EPSILON, reflDir,
+                                glm::dvec3(1.0), ray::REFLECTION);
+              } else {
+                power *= kt;
+                photonRay = ray(hitPoint + refrDir * RAY_EPSILON, refrDir,
+                                glm::dvec3(1.0), ray::REFRACTION);
+              }
+            } else {
+              // Diffuse absorption (no prior specular bounce → not a caustic)
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (auto &tp : threadPhotons) {
+    for (auto &phot : tp) {
+      scene->causticMap.store(phot);
+    }
+  }
+
+  if (!scene->causticMap.empty()) {
+    scene->causticMap.balance();
+    std::cerr << "[caustics] stored " << scene->causticMap.size()
+              << " caustic photons." << std::endl;
+  } else {
+    std::cerr << "[caustics] no caustic photons stored (no specular→diffuse paths found)." << std::endl;
+  }
+}
 
 void RayTracer::getBuffer(unsigned char *&buf, int &w, int &h) {
   buf = buffer.data();
@@ -1058,6 +1284,7 @@ void RayTracer::traceSetup(int w, int h) {
   areaLightSamples = traceUI->getAreaLightSamples();
   setGIEnabled(useDistributedGI && traceUI->getGISamples() > 0,
                traceUI->getGISamples(), traceUI->getGIIntensity());
+  causticPhotons = traceUI->getCausticPhotons();
   if (aaVisualize) {
     aaVisBuffer.resize(buffer_width * buffer_height * 3);
     std::fill(aaVisBuffer.begin(), aaVisBuffer.end(),
@@ -1195,6 +1422,11 @@ void RayTracer::renderCurrentScene(int w, int h) {
 
 void RayTracer::traceImage(int w, int h) {
   traceSetup(w, h);
+
+  // Build caustic photon map (pre-pass, only for path/distributed modes)
+  if (causticPhotons > 0 && scene && (usePathIntegrator || useDistributedGI)) {
+    emitCausticPhotons();
+  }
 
   if ((usePathIntegrator || useDistributedGI) && temporalSampler && temporalSampler->isEnabled() && hasSceneJsonTemplate &&
       !sceneJsonContents.empty()) {

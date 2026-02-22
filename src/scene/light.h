@@ -230,6 +230,7 @@ protected:
 public:
   void glDrawLight(GLenum lightID) const;
   void glDrawLight() const;
+  glm::dvec3 getPosition() const { return position; }
 
 protected:
 };
