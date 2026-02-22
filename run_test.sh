@@ -1,6 +1,5 @@
-cd build
-make -j8
-cd ..
-./build/bin/ray -r 5 -t 8 /Users/krisub/Projects/graphics/ray_tracer/scenes/hitchcock.json ../output_imgs/hitchcock_noaa.png
-# ./build/bin/ray -r 5 -t 8 --aaa /Users/krisub/Projects/graphics/ray_tracer/scenes/hitchcock.json ../output_imgs/hitchcock_aaa.png
-# ./build/bin/ray -r 5 -t 8 --fxaa /Users/krisub/Projects/graphics/ray_tracer/scenes/hitchcock.json ../output_imgs/hitchcock_fxaa.png
+./build/bin/ray -r 10 --path -j /u/krisub/graphics/p1/ray/settings.json /u/krisub/graphics/p1/assets/scenes/global_ill_path/gi_cornell.json out1.png &
+./build/bin/ray -r 10 --path -j /u/krisub/graphics/p1/ray/settings.json /u/krisub/graphics/p1/assets/scenes/global_ill_path/gi_dof_simple.json out2.png &
+./build/bin/ray -r 10 --path -j /u/krisub/graphics/p1/ray/settings.json /u/krisub/graphics/p1/assets/scenes/global_ill_path/gi_glossy_reflection.json out3.png &
+./build/bin/ray -r 10 --path -j /u/krisub/graphics/p1/ray/settings.json /u/krisub/graphics/p1/assets/scenes/global_ill_path/gi_motion_blur.json out4.png &
+./build/bin/ray -r 10 --path -j /u/krisub/graphics/p1/ray/settings.json /u/krisub/graphics/p1/assets/scenes/global_ill_path/gi_soft_shadows.json out5.png &

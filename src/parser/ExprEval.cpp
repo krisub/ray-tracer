@@ -16,7 +16,7 @@ public:
 
   std::optional<double> parse() {
     skipSpace();
-    auto v = parseExpr();
+    auto v = parseComparison();
     if (!v.has_value())
       return std::nullopt;
     skipSpace();
@@ -55,6 +55,52 @@ private:
 
   bool isIdentifierChar(char c) {
     return std::isalnum((unsigned char)c) || c == '_';
+  }
+
+  std::optional<double> parseComparison() {
+    auto left = parseExpr();
+    if (!left.has_value())
+      return std::nullopt;
+    
+    skipSpace();
+    if (pos >= (int)s.size())
+      return left;
+    
+    if (consume(">=")) {
+      auto right = parseExpr();
+      if (!right.has_value())
+        return std::nullopt;
+      return (*left >= *right) ? 1.0 : 0.0;
+    } else if (consume("<=")) {
+      auto right = parseExpr();
+      if (!right.has_value())
+        return std::nullopt;
+      return (*left <= *right) ? 1.0 : 0.0;
+    } else if (consume("==")) {
+      auto right = parseExpr();
+      if (!right.has_value())
+        return std::nullopt;
+      return (*left == *right) ? 1.0 : 0.0;
+    } else if (consume("!=")) {
+      auto right = parseExpr();
+      if (!right.has_value())
+        return std::nullopt;
+      return (*left != *right) ? 1.0 : 0.0;
+    } else if (s[pos] == '>') {
+      ++pos;
+      auto right = parseExpr();
+      if (!right.has_value())
+        return std::nullopt;
+      return (*left > *right) ? 1.0 : 0.0;
+    } else if (s[pos] == '<') {
+      ++pos;
+      auto right = parseExpr();
+      if (!right.has_value())
+        return std::nullopt;
+      return (*left < *right) ? 1.0 : 0.0;
+    }
+    
+    return left;
   }
 
   std::optional<double> parseExpr() {
@@ -236,7 +282,8 @@ bool isExpression(const std::string &s) {
   for (char c : s) {
     if (std::isalnum((unsigned char)c) || c == '.' || c == '+' || c == '-' ||
         c == '*' || c == '/' || c == '(' || c == ')' || c == ',' ||
-        c == ' ' || c == '\t' || c == '_')
+        c == ' ' || c == '\t' || c == '_' || c == '<' || c == '>' || 
+        c == '=' || c == '!')
       continue;
     return false;
   }

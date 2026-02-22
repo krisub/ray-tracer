@@ -40,7 +40,7 @@ public:
    *
    * called by `RayTracer::trace` to generate primary rays for each pixel
    */
-  void rayThrough(double x, double y, ray &r);
+  void rayThrough(double x, double y, ray &r) const;
 
   /**
    * @brief sets the camera eye position
@@ -103,10 +103,30 @@ public:
   /** @return the "Up" vector (camera's local Y axis) */
   const glm::dvec3 &getV() const { return v; }
 
+  // depth of field parameters for distributed ray tracing
+  void setFocalDistance(double dist) { focalDistance = dist; }
+  double getFocalDistance() const { return focalDistance; }
+  
+  void setFNumber(double fnum) { fNumber = fnum; }
+  double getFNumber() const { return fNumber; }
+  
+  bool hasDepthOfField() const { return focalDistance > 0.0 && fNumber > 0.0; }
+  void setShutterOpen(double open) { shutterOpen = open; }
+  void setShutterClose(double close) { shutterClose = close; }
+  double getShutterOpen() const { return shutterOpen; }
+  double getShutterClose() const { return shutterClose; }
+  bool hasMotionBlur() const { return shutterClose > shutterOpen; }
+
 private:
   glm::dmat3 m;            ///< rotation matrix
   double normalizedHeight; ///< dimensions of image plane at unit dist from eye
   double aspectRatio;      ///< image width / height ratio
+  
+  // depth of field parameters
+  double focalDistance = 0.0; ///< distance to plane of focus (0 = disabled)
+  double fNumber = 0.0;       ///< f-stop value (lower = larger aperture, more blur)
+  double shutterOpen = 0.0;   ///< shutter open time for temporal sampling
+  double shutterClose = 0.0;  ///< shutter close time for temporal sampling
 
   /**
    * @brief recalculates the camera basis vectors (u, v, look).

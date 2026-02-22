@@ -7,6 +7,7 @@
 #ifndef __TraceUI_h__
 #define __TraceUI_h__
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #define MAX_THREADS 32
@@ -19,6 +20,7 @@ class CubeMap;
 class TraceUI {
 public:
   enum class AccelMode { Binary, Wide8 };
+  enum class TracerMode { Whitted, Distributed, Path };
 
   TraceUI();
   virtual ~TraceUI();
@@ -68,6 +70,13 @@ public:
   bool getGoop() const { return m_goop; }
   bool getNormalMapping() const { return m_normalMapping; }
   bool getParallaxMapping() const { return m_parallaxMapping; }
+  int getAreaLightSamples() const { return m_areaLightSamples; }
+  void setAreaLightSamples(int samples) { m_areaLightSamples = std::max(1, samples); }
+  int getGISamples() const { return m_giSamples; }
+  double getGIIntensity() const { return m_giIntensity; }
+  int getPathSPP() const { return m_pathSPP; }
+  int getMotionBlurSamples() const { return m_motionBlurSamples; }
+  TracerMode tracerMode() const { return m_tracerMode; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -152,6 +161,12 @@ protected:
   AccelMode m_tlasAccelMode = AccelMode::Wide8;
   AccelMode m_blasAccelMode = AccelMode::Wide8;
   bool m_neural = false;
+  TracerMode m_tracerMode = TracerMode::Whitted; // whitted=basic, distributed=GI multi-ray, path=true path tracer
+  int m_areaLightSamples = 16;  // number of samples for area light soft shadows
+  int m_giSamples = 16;         // global illumination samples per shading point
+  double m_giIntensity = 1.0;   // global illumination intensity multiplier
+  int m_motionBlurSamples = 16;  // temporal samples for motion blur
+  int m_pathSPP = 1024;           // samples per pixel for path tracing
 
   std::unique_ptr<CubeMap> cubemap;
 

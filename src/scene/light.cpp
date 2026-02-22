@@ -1,5 +1,10 @@
 #include <cmath>
 #include <iostream>
+#include <random>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 #include "../SceneObjects/Portal.h"
 #include "light.h"
@@ -242,9 +247,107 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
   if (traceUI->getHandleOverlap()) {
     return shadowAttenuationOverlap(r, surfaceNormal, p, emissionOut);
   }
-  // YOUR CODE HERE:
-  // You should implement shadow-handling code here.
+  
+  if (isAreaLight() && traceUI &&
+      traceUI->tracerMode() != TraceUI::TracerMode::Whitted) {
+    int numSamples = traceUI->getAreaLightSamples();
+    if (numSamples <= 1)
+      numSamples = 16;
+    
+    glm::dvec3 totalAtten(0.0, 0.0, 0.0);
+    static thread_local std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    const double area = 4.0 * M_PI * radius * radius;
+    const double pA = (area > 1e-12) ? (1.0 / area) : 0.0;
+    
+    // uniform area sampling on sphere light surface.
+    for (int sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
+      // generate random point on unit sphere
+      double u = dist(rng) * 2.0 - 1.0;  // [-1, 1]
+      double theta = dist(rng) * 2.0 * M_PI;  // [0, 2pi]
+      double sqrtTerm = std::sqrt(1.0 - u * u);
+      glm::dvec3 randomOffset(sqrtTerm * std::cos(theta),
+                             sqrtTerm * std::sin(theta),
+                             u);
+      randomOffset *= radius;  // scale by light radius
 
+      glm::dvec3 samplePos = position + randomOffset;
+      glm::dvec3 nL = glm::normalize(randomOffset);
+      
+      glm::dvec3 lightAtten(1.0, 1.0, 1.0);
+      glm::dvec3 currPoint = p;
+      constexpr int maxPortalHops = 16;
+      int portalHops = 0;
+
+      while (true) {
+        glm::dvec3 pointToLight = samplePos - currPoint;
+        double distToLight = glm::length(pointToLight);
+        glm::dvec3 dirToLight = glm::normalize(pointToLight);
+
+        ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
+                      glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+        isect i;
+
+        if (scene->intersect(shadowRay, i)) {
+          if (i.getT() >= distToLight - RAY_EPSILON) {
+            break; // behind light
+          }
+
+          const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
+          if (portal && portal->getPartner() && portalHops < maxPortalHops) {
+            glm::dvec3 exitOrigin, exitDir;
+            if (portal->computeExitRay(shadowRay.at(i), dirToLight, exitOrigin,
+                                       exitDir)) {
+              currPoint = exitOrigin;
+              ++portalHops;
+              continue;
+            }
+          }
+
+          glm::dvec3 kt = i.getMaterial().kt(i);
+          if (glm::length(kt) < 1e-6) {
+            lightAtten = glm::dvec3(0.0, 0.0, 0.0);
+            break;
+          }
+
+          double direction = glm::dot(i.getN(), dirToLight);
+
+          if (direction > 0) {
+            double distance = i.getT();
+            lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
+          }
+
+          if (glm::length(lightAtten) < 1e-6) {
+            lightAtten = glm::dvec3(0.0, 0.0, 0.0);
+            break;
+          }
+
+          currPoint = shadowRay.at(i.getT() + RAY_EPSILON);
+        } else {
+          break;
+        }
+      }
+
+      const glm::dvec3 toLight = samplePos - p;
+      const double r2 = glm::dot(toLight, toLight);
+      if (r2 <= 1e-12 || pA <= 1e-12)
+        continue;
+
+      const glm::dvec3 wi = toLight / std::sqrt(r2);
+      const double cosSurface = std::max(0.0, glm::dot(surfaceNormal, wi));
+      const double cosLight = std::max(0.0, glm::dot(nL, -wi));
+      if (cosSurface <= 0.0 || cosLight <= 0.0)
+        continue;
+
+      const double geomFactor = (cosSurface * cosLight) / r2;
+      const double mcWeight = geomFactor / pA;
+      totalAtten += lightAtten * mcWeight;
+    }
+    
+    return totalAtten / static_cast<double>(numSamples);
+  }
+  
+  // standard point light shadow (no area light)
   glm::dvec3 lightAtten(1.0, 1.0, 1.0);
   glm::dvec3 currPoint = p;
   constexpr int maxPortalHops = 16;
@@ -304,6 +407,113 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
   }
 
   return lightAtten;
+}
+
+glm::dvec3 AreaLight::shadowAttenuation(const ray &r,
+                                        const glm::dvec3 &surfaceNormal,
+                                        const glm::dvec3 &p,
+                                        glm::dvec3 *emissionOut) const {
+  if (!traceUI || traceUI->tracerMode() == TraceUI::TracerMode::Whitted) {
+    return PointLight::shadowAttenuation(r, surfaceNormal, p, emissionOut);
+  }
+  if (traceUI->getHandleOverlap()) {
+    return PointLight::shadowAttenuationOverlap(r, surfaceNormal, p, emissionOut);
+  }
+
+  int numSamples = traceUI->getAreaLightSamples();
+  if (numSamples <= 1)
+    numSamples = 16;
+
+  glm::dvec3 totalAtten(0.0, 0.0, 0.0);
+  static thread_local std::mt19937 rng(std::random_device{}());
+  std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+  glm::dvec3 n = glm::normalize(normal);
+  glm::dvec3 helper = (std::abs(n.y) < 0.99) ? glm::dvec3(0.0, 1.0, 0.0)
+                                              : glm::dvec3(1.0, 0.0, 0.0);
+  glm::dvec3 t = glm::normalize(glm::cross(helper, n));
+  glm::dvec3 b = glm::cross(n, t);
+
+  for (int sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
+    const double u1 = dist(rng);
+    const double u2 = dist(rng);
+    const double rDisk = radius * std::sqrt(u1);
+    const double phi = 2.0 * M_PI * u2;
+    const glm::dvec3 samplePos = position +
+                                 t * (rDisk * std::cos(phi)) +
+                                 b * (rDisk * std::sin(phi));
+
+    glm::dvec3 lightAtten(1.0, 1.0, 1.0);
+    glm::dvec3 currPoint = p;
+    constexpr int maxPortalHops = 16;
+    int portalHops = 0;
+    bool blocked = false;
+
+    while (true) {
+      glm::dvec3 pointToLight = samplePos - currPoint;
+      double distToLight = glm::length(pointToLight);
+      if (distToLight < 1e-9)
+        break;
+      glm::dvec3 dirToLight = pointToLight / distToLight;
+
+      ray shadowRay(currPoint + dirToLight * RAY_EPSILON, dirToLight,
+                    glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+      isect is;
+      if (!scene->intersect(shadowRay, is))
+        break;
+
+      if (is.getT() >= distToLight - RAY_EPSILON)
+        break;
+
+      if (proxyObject && is.getObject() == proxyObject) {
+        currPoint = shadowRay.at(is.getT() + RAY_EPSILON);
+        continue;
+      }
+
+      const Portal *portal = dynamic_cast<const Portal *>(is.getObject());
+      if (portal && portal->getPartner() && portalHops < maxPortalHops) {
+        glm::dvec3 exitOrigin, exitDir;
+        if (portal->computeExitRay(shadowRay.at(is), dirToLight, exitOrigin,
+                                   exitDir)) {
+          currPoint = exitOrigin;
+          ++portalHops;
+          continue;
+        }
+      }
+
+      const glm::dvec3 kt = is.getMaterial().kt(is);
+      if (glm::length(kt) < 1e-6) {
+        blocked = true;
+        break;
+      }
+
+      const double direction = glm::dot(is.getN(), dirToLight);
+      if (direction > 0.0) {
+        lightAtten *= glm::pow(kt, glm::dvec3(is.getT(), is.getT(), is.getT()));
+      }
+      if (glm::length(lightAtten) < 1e-6) {
+        blocked = true;
+        break;
+      }
+
+      currPoint = shadowRay.at(is.getT() + RAY_EPSILON);
+    }
+
+    if (blocked)
+      continue;
+
+    const glm::dvec3 toLight = samplePos - p;
+    const double r2 = glm::dot(toLight, toLight);
+    if (r2 <= 1e-12)
+      continue;
+    const glm::dvec3 wi = toLight / std::sqrt(r2);
+    // const double cosLight = std::max(0.0, glm::dot(n, -wi));
+    // if (cosLight <= 0.0)
+    //   continue;
+    totalAtten += lightAtten;
+  }
+
+  return totalAtten / static_cast<double>(numSamples);
 }
 
 glm::dvec3 PointLight::shadowAttenuationOverlap(

@@ -29,6 +29,9 @@ private:
   int m_animationFrames = 0;  // 0 = single frame
   double m_tStart = 0.0;
   double m_tEnd = 1.0;
+  bool m_forcePathIntegrator = false;
+  bool m_forceDistributed = false;
+  int m_forcePathSPP = 0; // 0 = use default
 };
 
 #endif

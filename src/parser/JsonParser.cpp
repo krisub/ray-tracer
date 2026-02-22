@@ -7,6 +7,8 @@
 #include "tiny_obj_loader.h"
 #include <sstream>
 
+#include <algorithm>
+#include <cmath>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <unordered_map>
@@ -50,6 +52,26 @@ bool hasKey(const json &obj, const std::string &key) {
   return obj.find(key) != obj.end();
 }
 
+static glm::dmat4 makeBasisTransform(const glm::dvec3 &normal,
+                                     const glm::dvec3 &position) {
+  glm::dvec3 n = normal;
+  if (glm::length(n) < 1e-8) {
+    n = glm::dvec3(0.0, -1.0, 0.0);
+  }
+  n = glm::normalize(n);
+  const glm::dvec3 helper =
+      (std::abs(n.y) < 0.99) ? glm::dvec3(0.0, 1.0, 0.0) : glm::dvec3(1.0, 0.0, 0.0);
+  const glm::dvec3 t = glm::normalize(glm::cross(helper, n));
+  const glm::dvec3 b = glm::cross(n, t);
+
+  glm::dmat4 xform(1.0);
+  xform[0] = glm::dvec4(t, 0.0);
+  xform[1] = glm::dvec4(b, 0.0);
+  xform[2] = glm::dvec4(n, 0.0);
+  xform[3] = glm::dvec4(position, 1.0);
+  return xform;
+}
+
 // substitute expression strings with evaluated numbers for animation (variable t)
 void substituteExpressions(json &j, double t) {
   if (j.is_string()) {
@@ -85,6 +107,15 @@ Camera parseCamera(const json &j) {
   }
   IGNORE_MISSING(c.setFOV(j.at("fov").get<double>()));
   IGNORE_MISSING(c.setAspectRatio(j.at("aspectRatio").get<double>()));
+  
+  // depth of field parameters (for distributed ray tracing)
+  // focal_distance: distance to the plane of focus
+  // f_number: f-stop value controlling aperture size (lower = more blur)
+  IGNORE_MISSING(c.setFocalDistance(j.at("focal_distance").get<double>()));
+  IGNORE_MISSING(c.setFNumber(j.at("f_number").get<double>()));
+  IGNORE_MISSING(c.setShutterOpen(j.at("shutter_open").get<double>()));
+  IGNORE_MISSING(c.setShutterClose(j.at("shutter_close").get<double>()));
+  
   return c;
 }
 
@@ -163,8 +194,75 @@ PointLight *parsePointLight(const json &j, ParseData &pd) {
   IGNORE_MISSING(j.at("constant_attenuation_coeff").get_to(atten_pow_0));
   IGNORE_MISSING(j.at("linear_attenuation_coeff").get_to(atten_pow_1));
   IGNORE_MISSING(j.at("quadratic_attenuation_coeff").get_to(atten_pow_2));
-  return new PointLight(pd.s, position, color, atten_pow_0, atten_pow_1,
-                        atten_pow_2);
+  
+  auto *light = new PointLight(pd.s, position, color, atten_pow_0, atten_pow_1,
+                                atten_pow_2);
+  
+  IGNORE_MISSING({
+    double radius = j.at("radius").get<double>();
+    if (radius > 0.0) {
+      light->setRadius(radius);
+    }
+  });
+  
+  return light;
+}
+
+AreaLight *parseAreaLight(const json &j, ParseData &pd) {
+  glm::dvec3 color = j.at("color").get<glm::dvec3>();
+  glm::dvec3 position = j.at("position").get<glm::dvec3>();
+  glm::dvec3 normal(0.0, -1.0, 0.0);
+  double radius = 0.5;
+  double thickness = 0.05;
+  float atten_pow_0 = 0.0f;
+  float atten_pow_1 = 0.0f;
+  float atten_pow_2 = 1.0f;
+
+  IGNORE_MISSING(j.at("normal").get_to(normal));
+  IGNORE_MISSING(j.at("radius").get_to(radius));
+  IGNORE_MISSING(j.at("thickness").get_to(thickness));
+  IGNORE_MISSING(j.at("constant_attenuation_coeff").get_to(atten_pow_0));
+  IGNORE_MISSING(j.at("linear_attenuation_coeff").get_to(atten_pow_1));
+  IGNORE_MISSING(j.at("quadratic_attenuation_coeff").get_to(atten_pow_2));
+
+  radius = std::max(1e-4, radius);
+  thickness = std::max(1e-4, thickness);
+
+  auto *light = new AreaLight(pd.s, position, color, atten_pow_0, atten_pow_1,
+                              atten_pow_2, radius, thickness, normal);
+
+  bool createProxy = true;
+  IGNORE_MISSING(j.at("create_proxy").get_to(createProxy));
+  if (createProxy) {
+    glm::dvec3 proxyEmissive = color;
+    double proxyEmissiveScale = 1.0;
+    IGNORE_MISSING(j.at("proxy_emissive").get_to(proxyEmissive));
+    IGNORE_MISSING(j.at("proxy_emissive_scale").get_to(proxyEmissiveScale));
+    proxyEmissive = std::max(0.0, proxyEmissiveScale) * proxyEmissive;
+
+    Material proxyMat;
+    proxyMat.setAmbient(glm::dvec3(0.0));
+    proxyMat.setDiffuse(glm::dvec3(0.0));
+    proxyMat.setSpecular(glm::dvec3(0.0));
+    proxyMat.setReflective(glm::dvec3(0.0));
+    proxyMat.setTransmissive(glm::dvec3(0.0));
+    proxyMat.setEmissive(proxyEmissive);
+
+    auto *proxyCylinder = new Cylinder(pd.s, &proxyMat);
+    proxyCylinder->setCapped(true);
+
+    glm::dvec3 n = glm::length(normal) < 1e-8 ? glm::dvec3(0.0, -1.0, 0.0)
+                                              : glm::normalize(normal);
+    const glm::dvec3 baseCenter = position - 0.5 * thickness * n;
+    const glm::dmat4 basis = makeBasisTransform(n, baseCenter);
+    const glm::dmat4 scale = glm::scale(glm::dmat4(1.0), glm::dvec3(radius, radius, thickness));
+    proxyCylinder->setTransform(MatrixTransform(basis * scale));
+
+    pd.s->add(proxyCylinder);
+    light->setProxyObject(proxyCylinder);
+  }
+
+  return light;
 }
 
 glm::dvec3 parseAmbientLight(const json &j) {
@@ -471,6 +569,8 @@ Scene *JsonParser::parseSceneFromJson(const json &j) {
       scene->add(parseDirectionalLight(val, pd));
     } else if (key == "point_light") {
       scene->add(parsePointLight(val, pd));
+    } else if (key == "area_light") {
+      scene->add(parseAreaLight(val, pd));
     } else if (isTransformKey(key)) {
       auto geoms = parseTransform(object, pd);
       for (auto g : geoms) {

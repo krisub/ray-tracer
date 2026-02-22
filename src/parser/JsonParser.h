@@ -71,8 +71,9 @@ the Scene is dropped), we allocate our lights as raw pointers with new and
 pass those pointers into the Scene. AmbientLight is weird because it's not
 actually a light (see comments in scene.h for details) */
 
-DirectionalLight *parseDirectionalLight(const json &j);
-PointLight *parsePointLight(const json &j);
+DirectionalLight *parseDirectionalLight(const json &j, ParseData &pd);
+PointLight *parsePointLight(const json &j, ParseData &pd);
+AreaLight *parseAreaLight(const json &j, ParseData &pd);
 glm::dvec3 parseAmbientLight(const json &j);
 
 Sphere *parseSphereBody(const json &j, ParseData &pd);

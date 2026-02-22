@@ -31,6 +31,15 @@ TraceUI::AccelMode parseAccelMode(const std::string &mode) {
   return TraceUI::AccelMode::Binary;
 }
 
+TraceUI::TracerMode parseTracerMode(const std::string &mode) {
+  if (mode == "path") {
+    return TraceUI::TracerMode::Path;
+  } else if (mode == "distributed") {
+    return TraceUI::TracerMode::Distributed;
+  }
+  return TraceUI::TracerMode::Whitted;
+}
+
 } // anonymous namespace
 
 TraceUI::TraceUI() {
@@ -72,6 +81,14 @@ void TraceUI::loadFromJson(const char *file) {
   load(json, "handle_overlap", m_handleOverlap);
   load(json, "normal_mapping", m_normalMapping);
   load(json, "parallax_mapping", m_parallaxMapping);
+  load(json, "area_light_samples", m_areaLightSamples);
+  load(json, "global_illumination_samples", m_giSamples);
+  load(json, "global_illumination_intensity", m_giIntensity);
+  load(json, "motion_blur_samples", m_motionBlurSamples);
+  m_tracerMode = parseTracerMode(json.value("tracer", std::string("whitted")));
+  m_areaLightSamples = std::max(1, m_areaLightSamples);
+  m_giSamples = std::max(0, m_giSamples);
+  m_motionBlurSamples = std::max(1, m_motionBlurSamples);
   const std::string accelMode = json.value("accel_mode", std::string("binary"));
   const std::string tlasAccelMode =
       json.value("tlas_accel_mode", accelMode);

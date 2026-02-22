@@ -1,0 +1,105 @@
+cmake_minimum_required(VERSION 3.16)
+project(utcs_ray)
+
+set(OpenGL_GL_PREFERENCE "LEGACY")
+set(pwd ${CMAKE_CURRENT_LIST_DIR})
+unset(src)
+
+# --- Compiler warnings ---
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_compile_options(-Wall -Wextra -Wno-unknown-pragmas)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(-Wall -Wextra -Wno-unknown-pragmas)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_compile_options(/W3)
+endif()
+
+# --- Source files ---
+if(NOT src)
+    aux_source_directory(${pwd} src)
+    aux_source_directory(${pwd}/fileio src)
+    aux_source_directory(${pwd}/parser src)
+    aux_source_directory(${pwd}/scene src)
+    aux_source_directory(${pwd}/SceneObjects src)
+    aux_source_directory(${pwd}/ui src)
+
+    if(WIN32)
+        aux_source_directory(${pwd}/win32 src)
+    endif()
+endif()
+
+# --- Executable ---
+add_executable(ray ${src})
+
+# --- Optimizations ---
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(ray PRIVATE
+        $<$<CONFIG:Release>:-O3 -mavx2 -mfma>
+    )
+endif()
+
+# --- OpenMP ---
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(ray OpenMP::OpenMP_CXX)
+endif()
+
+# --- OpenGL ---
+target_link_libraries(ray ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY})
+
+# --- FLTK setup (static) ---
+set(FLTK_PATH "/u/krisub/graphics/p1/gi_out")  # adjust if your include/lib are somewhere else
+
+# Include headers
+target_include_directories(ray SYSTEM PUBLIC "${FLTK_PATH}/include")
+
+# Link static libraries
+target_link_libraries(ray
+    "${FLTK_PATH}/lib/libfltk.a"
+    "${FLTK_PATH}/lib/libfltk_gl.a"
+    "${FLTK_PATH}/lib/libfltk_images.a"
+		X11
+    Xext
+    Xfixes
+    Xinerama
+    Xrender
+    Xcursor
+    pthread
+    dl    
+)
+
+# No RPATH needed for static linking
+
+# --- PNG and ZLIB ---
+find_package(ZLIB REQUIRED)
+target_link_libraries(ray ${ZLIB_LIBRARIES})
+set_property(TARGET ray APPEND PROPERTY INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR})
+
+find_package(PNG REQUIRED)
+target_link_libraries(ray ${PNG_LIBRARIES})
+
+# --- Additional local libs folder (optional) ---
+target_include_directories(ray SYSTEM PUBLIC ${pwd}/libs)
+
+# --- ONNX Runtime setup ---
+set(NN_PATH "${pwd}/nn")
+target_include_directories(ray SYSTEM PUBLIC ${NN_PATH}/include)
+
+find_library(ORT_LIB 
+    NAMES onnxruntime 
+    PATHS ${NN_PATH}/lib 
+    NO_DEFAULT_PATH
+)
+target_link_libraries(ray ${ORT_LIB})
+
+# --- Post-build: copy ONNX Runtime libs and model ---
+add_custom_command(TARGET ray POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ray>/lib
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${NN_PATH}/lib $<TARGET_FILE_DIR:ray>/lib
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NN_PATH}/neural_aa_best.onnx $<TARGET_FILE_DIR:ray>/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NN_PATH}/neural_aa_best.onnx.data $<TARGET_FILE_DIR:ray>/
+    COMMENT "Copying ONNX Runtime libs, model, and weights to build directory"
+)
+
+# --- C++ standard ---
+set_property(TARGET ray PROPERTY CXX_STANDARD 17)

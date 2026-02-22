@@ -26,6 +26,7 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <utility>
 
 #include <unistd.h> 
@@ -365,6 +366,318 @@ RayTracer::traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
   return colorC;
 }
 
+// global illumination
+glm::dvec3 RayTracer::computeIndirectIllumination(const ray &r, const isect &i,
+                                                   const BRDF &brdf,
+                                                   const glm::dvec3 &thresh,
+                                                   int depth, int numSamples) {
+  if (thresh.x > 0 && std::max({brdf.kd.x, brdf.kd.y, brdf.kd.z,
+                                 brdf.ks.x, brdf.ks.y, brdf.ks.z}) < thresh.x)
+    return glm::dvec3(0.0);
+
+  if (depth <= 0 || numSamples <= 0)
+    return glm::dvec3(0.0);
+
+  glm::dvec3 hitPoint = r.at(i);
+  glm::dvec3 surfaceNormal = i.getN();
+  glm::dvec3 incidentDir = r.getDirection();
+
+  glm::dvec3 indirectLight(0.0);
+  HemisphereSampler sampler;
+
+  int diffuseSamples = static_cast<int>(numSamples * 0.5);
+  int specularSamples = numSamples - diffuseSamples;
+
+  glm::dvec3 diffuseEstimate(0.0);
+  for (int sampleIdx = 0; sampleIdx < diffuseSamples; ++sampleIdx) {
+    glm::dvec3 sampleDir =
+        sampler.sampleCosineWeightedHemisphere(surfaceNormal);
+    const double cosTheta = glm::dot(surfaceNormal, sampleDir);
+    if (cosTheta <= 0.0) {
+      continue;
+    }
+    const double pdf =
+        HemisphereSampler::pdfCosineWeighted(surfaceNormal, sampleDir);
+    if (pdf <= 1e-12) {
+      continue;
+    }
+    glm::dvec3 incomingRadiance =
+        traceIndirectRay(hitPoint, sampleDir, thresh, depth - 1);
+    const glm::dvec3 brdfValue = brdf.kd / M_PI;
+    diffuseEstimate += incomingRadiance * brdfValue * (cosTheta / pdf);
+  }
+  if (diffuseSamples > 0) {
+    diffuseEstimate /= static_cast<double>(diffuseSamples);
+  }
+  indirectLight += diffuseEstimate;
+
+  double specularWeight = std::max({brdf.ks.x, brdf.ks.y, brdf.ks.z});
+  if (specularWeight > 1e-6) {
+    glm::dvec3 idealReflection =
+        glm::normalize(computeReflectionDirection(incidentDir, surfaceNormal));
+    const double shininess =
+        std::max(1.0, 2.0 / (brdf.roughness * brdf.roughness) - 2.0);
+
+    glm::dvec3 specularEstimate(0.0);
+    for (int sampleIdx = 0; sampleIdx < specularSamples; ++sampleIdx) {
+      glm::dvec3 sampleDir = sampler.samplePhongSpecular(
+          surfaceNormal, idealReflection, brdf.roughness);
+
+      const double cosTheta = glm::dot(surfaceNormal, sampleDir);
+      if (cosTheta <= 0.0) {
+        continue;
+      }
+
+      const double rDotWi = glm::dot(idealReflection, sampleDir);
+      if (rDotWi <= 0.0) {
+        continue;
+      }
+
+      const double pdf =
+          ((shininess + 1.0) / (2.0 * M_PI)) * std::pow(rDotWi, shininess);
+      if (pdf <= 1e-12) {
+        continue;
+      }
+
+      glm::dvec3 incomingRadiance =
+          traceIndirectRay(hitPoint, sampleDir, thresh, depth - 1);
+
+      const glm::dvec3 brdfValue =
+          brdf.ks * ((shininess + 2.0) / (2.0 * M_PI)) *
+          std::pow(rDotWi, shininess);
+      specularEstimate += incomingRadiance * brdfValue * (cosTheta / pdf);
+    }
+    if (specularSamples > 0) {
+      specularEstimate /= static_cast<double>(specularSamples);
+    }
+    indirectLight += specularEstimate;
+  }
+
+  return indirectLight;
+}
+
+glm::dvec3 RayTracer::traceIndirectRay(const glm::dvec3 &hitPoint,
+                                       const glm::dvec3 &direction,
+                                       const glm::dvec3 &thresh, int depth) {
+  if (depth <= 0)
+    return glm::dvec3(0.0);
+
+  glm::dvec3 rayOrigin = hitPoint + direction * RAY_EPSILON;
+  ray secondaryRay(rayOrigin, glm::normalize(direction),
+                   glm::dvec3(1.0, 1.0, 1.0), ray::SHADOW);
+
+  double t_dummy;
+  return traceRay(secondaryRay, thresh, depth, t_dummy);
+}
+
+
+// path tracer (monte carlo path tracing with next event estimation)
+// distributed ray tracing- N secondary rays per bounce (exponential tree)
+
+// path tracing- 1 random path per sample through the scene
+// SPP is param- higher means more samples to average
+
+// emission (first bounce or after specular bounce only, to avoid double-counting with NEE)
+// next event estimation: shadow rays to all lights, weighted by BRDF
+// sample 1 direction from the BRDF (diffuse or specular chosen probabilistically)
+// update throughput by BRDF * cos(theta) / pdf
+// adaptive termination
+//
+// this should capture-
+// - color bleeding (diffuse interreflection)
+// - soft shadows (via area light NEE)
+// - ambient occlusion (dark corners/edges)
+// - caustics (specular-to-diffuse paths, though noisy)
+glm::dvec3 RayTracer::tracePathRay(ray &r, int maxDepth) {
+  glm::dvec3 radiance(0.0);
+  glm::dvec3 throughput(1.0);
+  ray currentRay = r;
+
+  static thread_local std::mt19937 rng(std::random_device{}());
+  static thread_local std::uniform_real_distribution<double> unifDist(0.0, 1.0);
+  HemisphereSampler sampler;
+
+  bool lastBounceSpecular = true; // camera ray counts as "specular"
+
+  for (int bounce = 0; bounce <= maxDepth; ++bounce) {
+    isect is;
+    if (!scene->intersect(currentRay, is)) {
+      if (traceUI && traceUI->cubeMap()) {
+        radiance += throughput * traceUI->getCubeMap()->getColor(currentRay);
+      } else {
+        radiance += throughput * backgroundColor();
+      }
+      break;
+    }
+
+    const Material &m = is.getMaterial();
+    glm::dvec3 hitPoint = currentRay.at(is);
+    glm::dvec3 N = is.getN(); // unit normal from intersection
+    glm::dvec3 wo = -currentRay.getDirection(); // outgoing dir (toward camera)
+
+    bool backfacing = glm::dot(N, wo) < 0.0;
+    if (backfacing)
+      N = -N;
+
+    glm::dvec3 ke = m.ke(is);
+    if ((bounce == 0 || lastBounceSpecular) &&
+        (ke.x > 1e-9 || ke.y > 1e-9 || ke.z > 1e-9)) {
+      radiance += throughput * ke;
+    }
+
+    glm::dvec3 kd = m.kd(is);
+    glm::dvec3 ks = m.ks(is);
+    double shininess = std::max(1.0, m.shininess(is));
+    glm::dvec3 kt = m.kt(is);
+
+    double kdMax = std::max({kd.x, kd.y, kd.z});
+    double ksMax = std::max({ks.x, ks.y, ks.z});
+    double ktMax = std::max({kt.x, kt.y, kt.z});
+
+    if (kdMax + ksMax + ktMax < 1e-9)
+      break;
+
+    if (kdMax + ksMax > 1e-9) {
+      for (const auto &pLight : scene->getAllLights()) {
+        glm::dvec3 dirToLight = pLight->getDirection(hitPoint);
+        double NdotL = glm::dot(N, dirToLight);
+        if (NdotL <= 0.0)
+          continue;
+
+        double distAtten = pLight->distanceAttenuation(hitPoint);
+        if (distAtten < 1e-6)
+          continue;
+
+        glm::dvec3 shadowAtten =
+            pLight->shadowAttenuation(currentRay, N, hitPoint);
+        if (shadowAtten.x + shadowAtten.y + shadowAtten.z < 1e-6)
+          continue;
+
+        // Phong convention for NEE direct lighting (matches scene authoring).
+        // Throughput uses PBR BRDF (kd/pi) for energy-conserving indirect bounces.
+        glm::dvec3 directContrib = kd * NdotL;
+
+        if (ksMax > 1e-9) {
+          glm::dvec3 R_wo =
+              glm::normalize(2.0 * glm::dot(N, wo) * N - wo);
+          double specCos = std::max(0.0, glm::dot(R_wo, dirToLight));
+          if (specCos > 0.0) {
+            directContrib += ks * std::pow(specCos, shininess);
+          }
+        }
+
+        radiance += throughput * directContrib * pLight->getColor() *
+                    distAtten * shadowAtten;
+      }
+    }
+
+    double kdLum = 0.299 * kd.x + 0.587 * kd.y + 0.114 * kd.z;
+    double ksLum = 0.299 * ks.x + 0.587 * ks.y + 0.114 * ks.z;
+    double ktLum = 0.299 * kt.x + 0.587 * kt.y + 0.114 * kt.z;
+    double totalLum = kdLum + ksLum + ktLum;
+    if (totalLum < 1e-10)
+      break;
+
+    double pDiffuse = kdLum / totalLum;
+    double pSpecular = ksLum / totalLum;
+    // pTransmit = ktLum / totalLum (implicit: 1 - pDiffuse - pSpecular)
+
+    double xi = unifDist(rng);
+    glm::dvec3 wi;
+
+    if (xi < pDiffuse) {
+      wi = sampler.sampleCosineWeightedHemisphere(N);
+      double cosTheta = glm::dot(N, wi);
+      if (cosTheta <= 0.0)
+        break;
+
+      double pdf_d = cosTheta / M_PI;
+      double pdf_s = 0.0;
+      if (ksMax > 1e-9) {
+        glm::dvec3 R_wo = glm::normalize(2.0 * glm::dot(N, wo) * N - wo);
+        double rDotWi = std::max(0.0, glm::dot(R_wo, wi));
+        pdf_s = ((shininess + 1.0) / (2.0 * M_PI)) *
+                std::pow(rDotWi, shininess);
+      }
+      double mixedPdf = pDiffuse * pdf_d + pSpecular * pdf_s;
+      if (mixedPdf <= 1e-12)
+        break;
+
+      // PBR BRDF for energy-conserving throughput: kd/pi + ks*(n+2)/(2pi)*(R·wi)^n
+      glm::dvec3 brdfVal = kd / M_PI;
+      if (ksMax > 1e-9) {
+        glm::dvec3 R_wo = glm::normalize(2.0 * glm::dot(N, wo) * N - wo);
+        double specCos = std::max(0.0, glm::dot(R_wo, wi));
+        if (specCos > 0.0) {
+          brdfVal += ks * ((shininess + 2.0) / (2.0 * M_PI)) *
+                     std::pow(specCos, shininess);
+        }
+      }
+
+      throughput *= brdfVal * cosTheta / mixedPdf;
+      lastBounceSpecular = false;
+
+    } else if (xi < pDiffuse + pSpecular) {
+      glm::dvec3 R_wo = glm::normalize(2.0 * glm::dot(N, wo) * N - wo);
+      double roughness = std::sqrt(2.0 / (shininess + 2.0));
+      wi = sampler.samplePhongSpecular(N, R_wo, roughness);
+      double cosTheta = glm::dot(N, wi);
+      if (cosTheta <= 0.0)
+        break;
+
+      double rDotWi = std::max(0.0, glm::dot(R_wo, wi));
+      double pdf_s = ((shininess + 1.0) / (2.0 * M_PI)) *
+                     std::pow(rDotWi, shininess);
+      double pdf_d = cosTheta / M_PI;
+      double mixedPdf = pDiffuse * pdf_d + pSpecular * pdf_s;
+      if (mixedPdf <= 1e-12)
+        break;
+
+      // PBR BRDF for energy-conserving throughput
+      glm::dvec3 brdfVal = kd / M_PI;
+      if (rDotWi > 0.0) {
+        brdfVal += ks * ((shininess + 2.0) / (2.0 * M_PI)) *
+                   std::pow(rDotWi, shininess);
+      }
+
+      throughput *= brdfVal * cosTheta / mixedPdf;
+      lastBounceSpecular = (shininess > 50.0);
+
+    } else {
+      double ior = m.index(is);
+      double iorRatio = backfacing ? (ior / 1.0) : (1.0 / ior);
+      glm::dvec3 normalForRefract = backfacing ? -N : N;
+
+      glm::dvec3 refrDir =
+          computeRefractionDirection(-wo, normalForRefract, iorRatio);
+
+      if (glm::length(refrDir) < 1e-6) {
+        wi = computeReflectionDirection(-wo, N);
+      } else {
+        wi = glm::normalize(refrDir);
+      }
+
+      throughput *= kt / (ktLum / totalLum);
+      lastBounceSpecular = true;
+    }
+
+    if (bounce >= 3) {
+      double maxT = std::max({throughput.x, throughput.y, throughput.z});
+      double pContinue = std::min(maxT, 0.95);
+      if (pContinue < 0.01)
+        break;
+      if (unifDist(rng) >= pContinue)
+        break;
+      throughput /= pContinue;
+    }
+
+    currentRay = ray(hitPoint + wi * RAY_EPSILON, glm::normalize(wi),
+                     glm::dvec3(1.0), ray::VISIBILITY);
+  }
+
+  return radiance;
+}
+
 glm::dvec3 RayTracer::backgroundColor() const {
   return glm::dvec3(0.0, 0.0, 0.0);
 }
@@ -373,19 +686,103 @@ glm::dvec3 RayTracer::backgroundColor() const {
 // (x,y), through the projection plane, and out into the scene. All we do is
 // enter the main ray-tracing method, getting things started by plugging in an
 // initial ray weight of (0.0,0.0,0.0) and an initial recursion depth of 0.
-
 glm::dvec3 RayTracer::trace(double x, double y) {
   // Clear out the ray cache in the scene for debugging purposes,
   if (TraceUI::m_debug) {
     scene->clearIntersectCache(); // do not run debug mode with multithreading
   }
 
+  if (usePathIntegrator) {
+    int spp = std::max(1, pathSPP);
+    int maxDepth = std::max(5, traceUI->getDepth());
+    glm::dvec3 accumColor(0.0);
+
+    static thread_local std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<double> jitter(-0.5, 0.5);
+
+    for (int s = 0; s < spp; ++s) {
+      double jx = jitter(rng) / buffer_width;
+      double jy = jitter(rng) / buffer_height;
+
+      ray r(glm::dvec3(0, 0, 0), glm::dvec3(0, 0, 0), glm::dvec3(1, 1, 1),
+            ray::VISIBILITY);
+      scene->getCamera().rayThrough(x + jx, y + jy, r);
+
+      if (dofLens && dofLens->isEnabled()) {
+        const Camera &cam = scene->getCamera();
+        glm::dvec3 camLook = glm::normalize(cam.getLook());
+        glm::dvec3 focusPlanePoint =
+            cam.getEye() + camLook * dofLens->getFocalDistance();
+        glm::dvec3 rayDir = glm::normalize(r.getDirection());
+        double denom = glm::dot(rayDir, camLook);
+        double t = (std::abs(denom) > 1e-6)
+                       ? glm::dot(focusPlanePoint - r.getPosition(), camLook) /
+                             denom
+                       : dofLens->getFocalDistance();
+        glm::dvec3 focusPoint = r.getPosition() + rayDir * t;
+
+        glm::dvec2 apertureOffset = dofLens->sampleAperturePoint();
+        glm::dvec3 right = glm::normalize(cam.getU());
+        glm::dvec3 up = glm::normalize(cam.getV());
+        glm::dvec3 apertureOrigin =
+            cam.getEye() + right * apertureOffset.x + up * apertureOffset.y;
+        r.setPosition(apertureOrigin);
+        r.setDirection(glm::normalize(focusPoint - apertureOrigin));
+      }
+
+      accumColor += tracePathRay(r, maxDepth);
+    }
+
+    return glm::clamp(accumColor / static_cast<double>(spp), 0.0, 1.0);
+  }
+
+  if (dofLens && dofLens->isEnabled()) {
+    constexpr int dofSamples = 32;
+    glm::dvec3 accumColor(0.0);
+
+    const Camera &cam = scene->getCamera();
+    glm::dvec3 camLook = glm::normalize(cam.getLook());
+    glm::dvec3 focusPlanePoint = cam.getEye() +
+                                 camLook * dofLens->getFocalDistance();
+
+    for (int s = 0; s < dofSamples; ++s) {
+      ray r(glm::dvec3(0, 0, 0), glm::dvec3(0, 0, 0), glm::dvec3(1, 1, 1),
+            ray::VISIBILITY);
+
+      cam.rayThrough(x, y, r);
+
+      glm::dvec3 rayOrigin = r.getPosition();
+      glm::dvec3 rayDir = glm::normalize(r.getDirection());
+      double denom = glm::dot(rayDir, camLook);
+      double t = (std::abs(denom) > 1e-6)
+                     ? glm::dot(focusPlanePoint - rayOrigin, camLook) / denom
+                     : dofLens->getFocalDistance();
+      glm::dvec3 focusPoint = rayOrigin + rayDir * t;
+
+      glm::dvec2 apertureOffset = dofLens->sampleAperturePoint();
+      glm::dvec3 right = glm::normalize(cam.getU());
+      glm::dvec3 up = glm::normalize(cam.getV());
+      glm::dvec3 apertureOrigin = cam.getEye() + right * apertureOffset.x +
+                                  up * apertureOffset.y;
+
+      r.setPosition(apertureOrigin);
+      r.setDirection(glm::normalize(focusPoint - apertureOrigin));
+
+      double dummy;
+      const double adaptThresh = rayTermThresh;
+      glm::dvec3 sampleColor =
+          traceRay(r, glm::dvec3(adaptThresh, adaptThresh, adaptThresh),
+                   traceUI->getDepth(), dummy);
+      accumColor += glm::clamp(sampleColor, 0.0, 1.0);
+    }
+
+    return accumColor / static_cast<double>(dofSamples);
+  }
+
   ray r(glm::dvec3(0, 0, 0), glm::dvec3(0, 0, 0), glm::dvec3(1, 1, 1),
         ray::VISIBILITY);
   scene->getCamera().rayThrough(x, y, r);
   double dummy;
-  // Pass adaptive termination threshold: skip reflection/refraction when
-  // max(Kr) or max(Kt) < rayTermThresh (0 = disabled)
   const double adaptThresh = rayTermThresh;
   glm::dvec3 ret =
       traceRay(r, glm::dvec3(adaptThresh, adaptThresh, adaptThresh),
@@ -478,6 +875,17 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
 
+    if (useDistributedGI && giNumSamples > 0 && depth > 1) {
+      glm::dvec3 kd = m.kd(i);
+      glm::dvec3 ks = m.ks(i);
+      double shininess = m.shininess(i);
+      BRDF brdf = BRDF::fromPhong(kd, ks, shininess);
+
+      glm::dvec3 indirectColor =
+          computeIndirectIllumination(r, i, brdf, thresh, depth, giNumSamples);
+      colorC += giIntensity * indirectColor;
+    }
+
     glm::dvec3 Kr = m.kr(i);
     accumulateReflection(r, i, Kr, thresh, depth, colorC);
 
@@ -507,7 +915,9 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 RayTracer::RayTracer()
     : scene(nullptr), buffer(0), rayTermThresh(0), blockInterpThresh(0),
     buffer_width(0), buffer_height(0),
-      m_bBufferReady(false), goopEnabled(false) {}
+      m_bBufferReady(false), goopEnabled(false), giNumSamples(0), 
+      giIntensity(1.0), areaLightSamples(1), usePathIntegrator(false),
+      useDistributedGI(false), pathSPP(64) {}
 
 RayTracer::~RayTracer() {}
 
@@ -552,6 +962,9 @@ bool RayTracer::loadScene(const char *fn) {
     path = path.substr(0, path.find_last_of("\\/"));
 
   if (isRay) {
+    hasSceneJsonTemplate = false;
+    sceneJsonContents.clear();
+    sceneJsonDir.clear();
     // .ray Parsing Path
     // Call this with 'true' for debug output from the tokenizer
     Tokenizer tokenizer(ifs, false);
@@ -575,8 +988,22 @@ bool RayTracer::loadScene(const char *fn) {
   } else {
     // JSON Parsing Path
     try {
-      JsonParser parser(path, ifs);
-      scene.reset(parser.parseScene());
+      hasSceneJsonTemplate = true;
+      sceneJsonDir = path;
+      std::ostringstream sstr;
+      sstr << ifs.rdbuf();
+      sceneJsonContents = sstr.str();
+      if (sceneJsonContents.empty()) {
+        hasSceneJsonTemplate = false;
+        sceneJsonContents.clear();
+        sceneJsonDir.clear();
+      } else {
+        nlohmann::json baseSceneJson = nlohmann::json::parse(sceneJsonContents);
+        nlohmann::json initialJson = baseSceneJson;
+        substituteExpressions(initialJson, 0.0);
+        JsonParser parser(path);
+        scene.reset(parser.parseSceneFromJson(initialJson));
+      }
     } catch (ParserException &pe) {
       string msg("Parser: fatal exception ");
       msg.append(pe.message());
@@ -609,6 +1036,7 @@ void RayTracer::traceSetup(int w, int h) {
   buffer_height = h;
   std::fill(buffer.begin(), buffer.end(), 0);
   m_bBufferReady = true;
+  skipNextPostAAPass = false;
 
   /*
    * Sync with TraceUI
@@ -624,14 +1052,47 @@ void RayTracer::traceSetup(int w, int h) {
   handleOverlap = traceUI->getHandleOverlap();
   aaVisualize = traceUI->aaVisualize();
   goopEnabled = traceUI->getGoop();
+  usePathIntegrator = (traceUI->tracerMode() == TraceUI::TracerMode::Path);
+  useDistributedGI = (traceUI->tracerMode() == TraceUI::TracerMode::Distributed);
+  pathSPP = traceUI->getPathSPP();
+  areaLightSamples = traceUI->getAreaLightSamples();
+  setGIEnabled(useDistributedGI && traceUI->getGISamples() > 0,
+               traceUI->getGISamples(), traceUI->getGIIntensity());
   if (aaVisualize) {
     aaVisBuffer.resize(buffer_width * buffer_height * 3);
     std::fill(aaVisBuffer.begin(), aaVisBuffer.end(),
               static_cast<unsigned char>(0));
   }
 
-  // YOUR CODE HERE
-  // FIXME: Additional initializations
+  if (scene) {
+    const Camera &cam = scene->getCamera();
+    if (cam.hasDepthOfField()) {
+      setDepthOfField(cam.getFocalDistance(), cam.getFNumber());
+    } else if (dofLens) {
+      dofLens->setEnabled(false);
+    }
+
+    if ((usePathIntegrator || useDistributedGI) && cam.hasMotionBlur()) {
+      setMotionBlur(cam.getShutterOpen(), cam.getShutterClose());
+    } else if (temporalSampler) {
+      temporalSampler->setEnabled(false);
+    }
+
+    bool hasAreaLights = false;
+    for (const auto &light : scene->getAllLights()) {
+      if (const PointLight *pointLight =
+              dynamic_cast<const PointLight *>(light)) {
+        if (pointLight->isAreaLight()) {
+          hasAreaLights = true;
+          break;
+        }
+      }
+    }
+    if ((usePathIntegrator || useDistributedGI) && hasAreaLights) {
+      setAreaLightSamples(std::max(areaLightSamples, 4));
+    }
+    traceUI->setAreaLightSamples(areaLightSamples);
+  }
 }
 
 /*
@@ -644,10 +1105,7 @@ void RayTracer::traceSetup(int w, int h) {
  *		h:	height of the image buffer
  *
  */
-void RayTracer::traceImage(int w, int h) {
-  // Always call traceSetup before rendering anything.
-  traceSetup(w, h);
-
+void RayTracer::renderCurrentScene(int w, int h) {
   if (threads > 0) {
     omp_set_num_threads(threads);
   }
@@ -735,7 +1193,86 @@ void RayTracer::traceImage(int w, int h) {
   }
 }
 
+void RayTracer::traceImage(int w, int h) {
+  traceSetup(w, h);
+
+  if ((usePathIntegrator || useDistributedGI) && temporalSampler && temporalSampler->isEnabled() && hasSceneJsonTemplate &&
+      !sceneJsonContents.empty()) {
+    const int temporalSamples = std::max(1, traceUI->getMotionBlurSamples());
+    std::vector<glm::dvec3> accum(static_cast<size_t>(w) * h,
+                                  glm::dvec3(0.0));
+
+    nlohmann::json baseSceneJson;
+    try {
+      baseSceneJson = nlohmann::json::parse(sceneJsonContents);
+    } catch (const nlohmann::json::exception &) {
+      renderCurrentScene(w, h);
+      return;
+    }
+
+    JsonParser parser(sceneJsonDir);
+    int usedSamples = 0;
+    for (int s = 0; s < temporalSamples; ++s) {
+      if (stopTrace.load(std::memory_order_acquire)) {
+        break;
+      }
+
+      const double sampleTime = temporalSampler->sampleTime();
+      nlohmann::json sampledJson = baseSceneJson;
+      substituteExpressions(sampledJson, sampleTime);
+
+      Scene *sampledScene = nullptr;
+      try {
+        sampledScene = parser.parseSceneFromJson(sampledJson);
+      } catch (const std::exception &) {
+        continue;
+      }
+
+      setScene(sampledScene);
+      traceSetup(w, h);
+      renderCurrentScene(w, h);
+      if (traceUI && traceUI->aaSwitch()) {
+        // motion blur and AA together by AAing each temporal sample
+        aaImage();
+      }
+
+      for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+          const size_t idx = static_cast<size_t>(x + y * w);
+          const unsigned char *pixel = buffer.data() + idx * 3;
+          accum[idx] += glm::dvec3(pixel[0], pixel[1], pixel[2]) / 255.0;
+        }
+      }
+      ++usedSamples;
+    }
+
+    if (usedSamples > 0) {
+      const double invSamples = 1.0 / static_cast<double>(usedSamples);
+      for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+          const size_t idx = static_cast<size_t>(x + y * w);
+          glm::dvec3 col = glm::clamp(accum[idx] * invSamples, 0.0, 1.0);
+          unsigned char *pixel = buffer.data() + idx * 3;
+          pixel[0] = static_cast<unsigned char>(255.0 * col[0]);
+          pixel[1] = static_cast<unsigned char>(255.0 * col[1]);
+          pixel[2] = static_cast<unsigned char>(255.0 * col[2]);
+        }
+      }
+      if (traceUI && traceUI->aaSwitch()) {
+        skipNextPostAAPass = true;
+      }
+      return;
+    }
+  }
+
+  renderCurrentScene(w, h);
+}
+
 int RayTracer::aaImage() {
+  if (skipNextPostAAPass) {
+    skipNextPostAAPass = false;
+    return 0;
+  }
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -799,6 +1336,10 @@ int RayTracer::aaImage() {
 }
 
 int RayTracer::aaStochasticImage() {
+  if (skipNextPostAAPass) {
+    skipNextPostAAPass = false;
+    return 0;
+  }
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -966,6 +1507,10 @@ std::pair<glm::dvec3, int> RayTracer::aaARecurseWithCount(
 }
 
 int RayTracer::aaAdaptiveImage() {
+  if (skipNextPostAAPass) {
+    skipNextPostAAPass = false;
+    return 0;
+  }
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -1044,6 +1589,10 @@ int RayTracer::aaAdaptiveImage() {
 }
 
 int RayTracer::aaFastApproxImage() {
+  if (skipNextPostAAPass) {
+    skipNextPostAAPass = false;
+    return 0;
+  }
   if (threads > 0)
     omp_set_num_threads(threads);
 
@@ -1138,6 +1687,10 @@ int RayTracer::aaFastApproxImage() {
 }
 
 int RayTracer::aaNeuralImage() {
+  if (skipNextPostAAPass) {
+    skipNextPostAAPass = false;
+    return 0;
+  }
   char path[PATH_MAX];
   ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
   std::string exeDir = (count > 0) ? std::string(path, count) : "";

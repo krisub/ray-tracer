@@ -209,6 +209,11 @@ public:
     linearTerm = b;
     quadraticTerm = c;
   }
+  
+  // Area light support for soft shadows (distributed ray tracing)
+  void setRadius(double r) { radius = r; }
+  double getRadius() const { return radius; }
+  bool isAreaLight() const { return radius > 0.0; }
 
 protected:
   glm::dvec3 position;
@@ -219,12 +224,59 @@ protected:
   float constantTerm;  ///< a (constant)
   float linearTerm;    ///< b (linear)
   float quadraticTerm; ///< c (quadratic)
+  
+  double radius = 0.0; ///< radius for area light (0 = point light, >0 = area light for soft shadows)
 
 public:
   void glDrawLight(GLenum lightID) const;
   void glDrawLight() const;
 
 protected:
+};
+
+/**
+ * @class AreaLight
+ * @brief Path-tracing area light with circular sampling and a thin-cylinder visual proxy.
+ *
+ * Behavior is path-only; in Whitted mode it falls back to point-light-style shadows.
+ */
+class AreaLight : public PointLight {
+public:
+  AreaLight(Scene *scene, const glm::dvec3 &pos, const glm::dvec3 &color,
+            float constantAttenuationTerm, float linearAttenuationTerm,
+            float quadraticAttenuationTerm, double radius,
+            double thickness = 0.05,
+            const glm::dvec3 &normal = glm::dvec3(0.0, -1.0, 0.0))
+      : PointLight(scene, pos, color, constantAttenuationTerm,
+                   linearAttenuationTerm, quadraticAttenuationTerm),
+        thickness(std::max(1e-4, thickness)),
+        normal(glm::normalize(normal)),
+        proxyObject(nullptr) {
+    setRadius(std::max(1e-4, radius));
+    if (glm::length(this->normal) < 1e-8) {
+      this->normal = glm::dvec3(0.0, -1.0, 0.0);
+    }
+  }
+
+  glm::dvec3 shadowAttenuation(const ray &r, const glm::dvec3 &surfaceNormal,
+                               const glm::dvec3 &pos,
+                               glm::dvec3 *emissionOut = nullptr) const override;
+
+  void setNormal(const glm::dvec3 &n) {
+    if (glm::length(n) > 1e-8) {
+      normal = glm::normalize(n);
+    }
+  }
+  const glm::dvec3 &getNormal() const { return normal; }
+  double getThickness() const { return thickness; }
+
+  void setProxyObject(const SceneObject *obj) { proxyObject = obj; }
+  const SceneObject *getProxyObject() const { return proxyObject; }
+
+private:
+  double thickness;
+  glm::dvec3 normal;
+  const SceneObject *proxyObject;
 };
 
 #endif // __LIGHT_H__

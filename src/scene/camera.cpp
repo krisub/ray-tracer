@@ -17,7 +17,7 @@ Camera::Camera() {
   m = glm::dmat3(1.0);
 }
 
-void Camera::rayThrough(double x, double y, ray &r)
+void Camera::rayThrough(double x, double y, ray &r) const
 // Ray through normalized window point x,y.  In normalized coordinates
 // the camera's x and y vary both vary from 0 to 1.
 {

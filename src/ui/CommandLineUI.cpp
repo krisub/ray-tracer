@@ -49,6 +49,9 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"animation", required_argument, nullptr, 1011},
       {"t-start", required_argument, nullptr, 1012},
       {"t-end", required_argument, nullptr, 1013},
+      {"path", no_argument, nullptr, 1014},
+      {"spp", required_argument, nullptr, 1015},
+      {"distributed", no_argument, nullptr, 1016},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -120,6 +123,15 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
     case 1013: // --t-end
       m_tEnd = atof(optarg);
       break;
+    case 1014: // --path
+      m_forcePathIntegrator = true;
+      break;
+    case 1015: // --spp
+      m_forcePathSPP = atoi(optarg);
+      break;
+    case 1016: // --distributed
+      m_forceDistributed = true;
+      break;
     default:
       // Oops; unknown argument
       std::cerr << "Invalid argument: '" << i << "'." << std::endl;
@@ -129,6 +141,14 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
   }
   if (jsonfile) {
     loadFromJson(jsonfile);
+  }
+  if (m_forcePathIntegrator) {
+    m_tracerMode = TraceUI::TracerMode::Path;
+  } else if (m_forceDistributed) {
+    m_tracerMode = TraceUI::TracerMode::Distributed;
+  }
+  if (m_forcePathSPP > 0) {
+    m_pathSPP = m_forcePathSPP;
   }
   if (!cubemap_file.empty()) {
     smartLoadCubemap(cubemap_file);
@@ -318,6 +338,5 @@ void CommandLineUI::usage() {
        << endl
        << "  -j <FILE>   set parameters from JSON file" << endl
        << "  -c <FILE>   one Cubemap file, the remainings will be "
-          "detected automatically"
-       << endl;
+          "detected automatically" << endl;
 }
