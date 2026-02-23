@@ -34,56 +34,86 @@ bool Portal::intersectLocal(ray &r, isect &i) const {
   return true;
 }
 
+void Portal::getFrame(glm::dvec3 &center, glm::dvec3 &right, glm::dvec3 &up,
+                      glm::dvec3 &normal) const {
+  center = transform.localToGlobalCoords(glm::dvec3(0, 0, 0));
+  right =
+      glm::normalize(transform.localToGlobalCoords(glm::dvec3(1, 0, 0)) - center);
+  up = glm::normalize(transform.localToGlobalCoords(glm::dvec3(0, 1, 0)) - center);
+  normal = glm::normalize(transform.localToGlobalCoordsNormal(glm::dvec3(0, 0, 1)));
+}
+
 bool Portal::computeExitRay(const glm::dvec3 &hitPoint,
                             const glm::dvec3 &rayDir, glm::dvec3 &exitOrigin,
                             glm::dvec3 &exitDir) const {
+  if (!mapPointToPartner(hitPoint, exitOrigin) ||
+      !mapDirectionToPartner(rayDir, exitDir)) {
+    return false;
+  }
+
+  glm::dvec3 centerB, rightB, upB, normalB;
+  partner_->getFrame(centerB, rightB, upB, normalB);
+  exitOrigin += normalB * RAY_EPSILON;
+  return true;
+}
+
+bool Portal::mapPointToPartner(const glm::dvec3 &point,
+                               glm::dvec3 &mappedPoint) const {
   if (!partner_) {
     return false;
   }
 
-  // worldspace frame for this (entry) portal
-  glm::dvec3 centerA = transform.localToGlobalCoords(glm::dvec3(0, 0, 0));
-  glm::dvec3 rightA =
-      glm::normalize(transform.localToGlobalCoords(glm::dvec3(1, 0, 0)) -
-                     transform.localToGlobalCoords(glm::dvec3(0, 0, 0)));
-  glm::dvec3 upA =
-      glm::normalize(transform.localToGlobalCoords(glm::dvec3(0, 1, 0)) -
-                     transform.localToGlobalCoords(glm::dvec3(0, 0, 0)));
-  glm::dvec3 normalA =
-      glm::normalize(transform.localToGlobalCoordsNormal(glm::dvec3(0, 0, 1)));
+  glm::dvec3 centerA, rightA, upA, normalA;
+  glm::dvec3 centerB, rightB, upB, normalB;
+  getFrame(centerA, rightA, upA, normalA);
+  partner_->getFrame(centerB, rightB, upB, normalB);
 
-  // worldspace frame for partner (exit) portal
-  glm::dvec3 centerB =
-      partner_->transform.localToGlobalCoords(glm::dvec3(0, 0, 0));
-  glm::dvec3 rightB =
-      glm::normalize(partner_->transform.localToGlobalCoords(glm::dvec3(1, 0, 0)) -
-                     partner_->transform.localToGlobalCoords(glm::dvec3(0, 0, 0)));
-  glm::dvec3 upB =
-      glm::normalize(partner_->transform.localToGlobalCoords(glm::dvec3(0, 1, 0)) -
-                     partner_->transform.localToGlobalCoords(glm::dvec3(0, 0, 0)));
-  glm::dvec3 normalB =
-      glm::normalize(partner_->transform.localToGlobalCoordsNormal(glm::dvec3(0, 0, 1)));
+  const glm::dvec3 rel = point - centerA;
+  const double u = glm::dot(rel, rightA);
+  const double v = glm::dot(rel, upA);
+  const double w = glm::dot(rel, normalA);
 
-  // local (u,v) on portal A
-  double u = glm::dot(hitPoint - centerA, rightA);
-  double v = glm::dot(hitPoint - centerA, upA);
-
-  // exit point on portal B
-  exitOrigin = centerB + u * rightB + v * upB;
-
-  // direction: express in A's frame, transfer to B's frame
-  // when exiting B, we go out the front (positive normalB)
-  double dx = glm::dot(rayDir, rightA);
-  double dy = glm::dot(rayDir, upA);
-  double dz = glm::dot(rayDir, normalA);
-
-  exitDir = dx * rightB + dy * upB - dz * normalB;
-  exitDir = glm::normalize(exitDir);
-
-  // offset slightly along exit normal to avoid self-intersection
-  exitOrigin += normalB * RAY_EPSILON;
-
+  mappedPoint = centerB + u * rightB + v * upB - w * normalB;
   return true;
+}
+
+bool Portal::mapDirectionToPartner(const glm::dvec3 &dir,
+                                   glm::dvec3 &mappedDir) const {
+  if (!partner_) {
+    return false;
+  }
+
+  glm::dvec3 centerA, rightA, upA, normalA;
+  glm::dvec3 centerB, rightB, upB, normalB;
+  getFrame(centerA, rightA, upA, normalA);
+  partner_->getFrame(centerB, rightB, upB, normalB);
+
+  const double dx = glm::dot(dir, rightA);
+  const double dy = glm::dot(dir, upA);
+  const double dz = glm::dot(dir, normalA);
+
+  mappedDir = dx * rightB + dy * upB - dz * normalB;
+  if (glm::length(mappedDir) < 1e-12) {
+    return false;
+  }
+  mappedDir = glm::normalize(mappedDir);
+  return true;
+}
+
+bool Portal::isPointInTeleportRegion(const glm::dvec3 &point) const {
+  glm::dvec3 center, right, up, normal;
+  getFrame(center, right, up, normal);
+
+  const glm::dvec3 rel = point - center;
+  const double u = glm::dot(rel, right);
+  const double v = glm::dot(rel, up);
+  const double w = glm::dot(rel, normal);
+
+  const double radial2 = u * u + v * v;
+  const double r2 = radius_ * radius_;
+  constexpr double kEps = 1e-9;
+
+  return (w < -kEps) && (radial2 <= r2 + kEps);
 }
 
 void Portal::glDrawLocal([[maybe_unused]] int quality,

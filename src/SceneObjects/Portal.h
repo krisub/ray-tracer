@@ -29,6 +29,17 @@ public:
   bool computeExitRay(const glm::dvec3 &hitPoint, const glm::dvec3 &rayDir,
                      glm::dvec3 &exitOrigin, glm::dvec3 &exitDir) const;
 
+  // map a world space point/direction through this portal to partner space
+  bool mapPointToPartner(const glm::dvec3 &point,
+                         glm::dvec3 &mappedPoint) const;
+  bool mapDirectionToPartner(const glm::dvec3 &dir,
+                             glm::dvec3 &mappedDir) const;
+
+  bool isPointInTeleportRegion(const glm::dvec3 &point) const;
+
+  void getFrame(glm::dvec3 &center, glm::dvec3 &right, glm::dvec3 &up,
+                glm::dvec3 &normal) const;
+
 protected:
   void glDrawLocal(int quality, bool actualMaterials,
                   bool actualTextures) const override;

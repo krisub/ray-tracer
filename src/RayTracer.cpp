@@ -4,6 +4,7 @@
 
 #include "RayTracer.h"
 #include "SceneObjects/Portal.h"
+#include "SceneObjects/trimesh.h"
 #include "interp.h"
 #include "scene/light.h"
 #include "scene/material.h"
@@ -20,6 +21,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
+#include <limits>
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
 #include <glm/gtc/noise.hpp>
@@ -72,6 +74,73 @@ inline glm::dvec3 recursiveRimWeight(const glm::dvec3 &F,
       glm::max(glm::dvec3(1e-6), glm::dvec3(1.0) - glm::clamp(F0, glm::dvec3(0.0), glm::dvec3(1.0)));
   glm::dvec3 rim = glm::clamp((F - F0) / denom, glm::dvec3(0.0), glm::dvec3(1.0));
   return glm::pow(rim, glm::dvec3(1.6));
+}
+
+inline glm::dvec3 rgbToHsl(const glm::dvec3 &rgbIn) {
+  glm::dvec3 rgb = glm::clamp(rgbIn, 0.0, 1.0);
+  double maxC = std::max({rgb.x, rgb.y, rgb.z});
+  double minC = std::min({rgb.x, rgb.y, rgb.z});
+  double delta = maxC - minC;
+
+  double h = 0.0;
+  double s = 0.0;
+  double l = 0.5 * (maxC + minC);
+
+  if (delta > 1e-12) {
+    double denom = 1.0 - std::abs(2.0 * l - 1.0);
+    s = (denom > 1e-12) ? (delta / denom) : 0.0;
+    if (maxC == rgb.x) {
+      h = std::fmod((rgb.y - rgb.z) / delta, 6.0);
+    } else if (maxC == rgb.y) {
+      h = ((rgb.z - rgb.x) / delta) + 2.0;
+    } else {
+      h = ((rgb.x - rgb.y) / delta) + 4.0;
+    }
+    h /= 6.0;
+    if (h < 0.0) {
+      h += 1.0;
+    }
+  }
+
+  return glm::dvec3(h, s, l);
+}
+
+inline double hueToRgb(double p, double q, double t) {
+  if (t < 0.0)
+    t += 1.0;
+  if (t > 1.0)
+    t -= 1.0;
+  if (t < (1.0 / 6.0))
+    return p + (q - p) * 6.0 * t;
+  if (t < 0.5)
+    return q;
+  if (t < (2.0 / 3.0))
+    return p + (q - p) * ((2.0 / 3.0) - t) * 6.0;
+  return p;
+}
+
+inline glm::dvec3 hslToRgb(const glm::dvec3 &hslIn) {
+  double h = hslIn.x;
+  double s = glm::clamp(hslIn.y, 0.0, 1.0);
+  double l = glm::clamp(hslIn.z, 0.0, 1.0);
+
+  if (s <= 1e-12) {
+    return glm::dvec3(l, l, l);
+  }
+
+  double q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
+  double p = 2.0 * l - q;
+
+  return glm::dvec3(hueToRgb(p, q, h + 1.0 / 3.0), hueToRgb(p, q, h),
+                    hueToRgb(p, q, h - 1.0 / 3.0));
+}
+
+inline glm::dvec3 quantizeLightness(const glm::dvec3 &rgbIn, int bins) {
+  const int safeBins = std::max(1, bins);
+  glm::dvec3 hsl = rgbToHsl(rgbIn);
+  hsl.z = std::ceil(hsl.z * safeBins) / static_cast<double>(safeBins);
+  hsl.z = glm::clamp(hsl.z, 0.0, 1.0);
+  return hslToRgb(hsl);
 }
 
 } // namespace
@@ -234,6 +303,125 @@ glm::dvec3 RayTracer::averageKtFromObjects(
   return sum / static_cast<double>(objStack.size());
 }
 
+bool RayTracer::intersectPortalAware(ray &r, isect &i) const {
+  if (!scene) {
+    i.setT(1000.0);
+    return false;
+  }
+
+  std::vector<const Portal *> portals;
+  std::vector<const Trimesh *> meshes;
+  portals.reserve(4);
+  meshes.reserve(32);
+  for (const auto *obj : scene->getAllObjects()) {
+    if (const auto *portal = dynamic_cast<const Portal *>(obj)) {
+      portals.push_back(portal);
+    } else if (const auto *mesh = dynamic_cast<const Trimesh *>(obj)) {
+      meshes.push_back(mesh);
+    }
+  }
+
+  auto isClippedOriginalMeshHit = [&](const isect &hit,
+                                      const glm::dvec3 &worldPoint) -> bool {
+    if (!dynamic_cast<const Trimesh *>(hit.getObject())) {
+      return false;
+    }
+    for (const Portal *portal : portals) {
+      if (portal->isPointInTeleportRegion(worldPoint)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  isect bestHit;
+  bool haveHit = false;
+  double bestT = std::numeric_limits<double>::infinity();
+
+  ray directRay(r.getPosition(), r.getDirection(), r.getAtten(), r.type());
+  double tOffset = 0.0;
+  constexpr double kAdvanceEps = 1e-6;
+  constexpr int kMaxClipRejects = 64;
+  for (int iter = 0; iter < kMaxClipRejects; ++iter) {
+    isect cur;
+    if (!scene->intersect(directRay, cur)) {
+      break;
+    }
+
+    const glm::dvec3 worldHit = directRay.at(cur);
+    if (isClippedOriginalMeshHit(cur, worldHit)) {
+      directRay.setPosition(worldHit + directRay.getDirection() * kAdvanceEps);
+      tOffset += cur.getT() + kAdvanceEps;
+      continue;
+    }
+
+    cur.setT(tOffset + cur.getT());
+    bestHit = cur;
+    bestT = cur.getT();
+    haveHit = true;
+    break;
+  }
+
+  // portal crossing works only for trimeshes
+  if (!portals.empty() && !meshes.empty()) {
+    ray invMappedRay(r.getPosition(), r.getDirection(), r.getAtten(), r.type());
+
+    for (const Portal *entry : portals) {
+      const Portal *exit = entry->getPartner();
+      if (!exit) {
+        continue;
+      }
+
+      glm::dvec3 invOrigin;
+      glm::dvec3 invDir;
+      if (!exit->mapPointToPartner(r.getPosition(), invOrigin) ||
+          !exit->mapDirectionToPartner(r.getDirection(), invDir)) {
+        continue;
+      }
+
+      invMappedRay.setPosition(invOrigin);
+      invMappedRay.setDirection(invDir);
+
+      for (const Trimesh *mesh : meshes) {
+        isect sourceHit;
+        if (!mesh->intersect(invMappedRay, sourceHit)) {
+          continue;
+        }
+
+        const double tCandidate = sourceHit.getT();
+        if (tCandidate <= RAY_EPSILON || tCandidate >= bestT) {
+          continue;
+        }
+
+        const glm::dvec3 sourcePoint = invMappedRay.at(sourceHit);
+        if (!entry->isPointInTeleportRegion(sourcePoint)) {
+          continue;
+        }
+
+        glm::dvec3 mappedNormal;
+        if (!entry->mapDirectionToPartner(sourceHit.getN(), mappedNormal)) {
+          continue;
+        }
+
+        sourceHit.setN(mappedNormal);
+        sourceHit.setT(tCandidate);
+
+        bestHit = sourceHit;
+        bestT = tCandidate;
+        haveHit = true;
+      }
+    }
+  }
+
+  if (!haveHit) {
+    i.setT(1000.0);
+    return false;
+  }
+
+  i = bestHit;
+  return true;
+}
+
 void RayTracer::accumulateReflectionOverlap(
     ray &r, const isect &i, const glm::dvec3 &Kr, const glm::dvec3 &thresh,
     int depth, glm::dvec3 &colorC,
@@ -352,7 +540,7 @@ RayTracer::traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
   std::cerr << "== current depth: " << depth << std::endl;
 #endif
 
-  if (scene->intersect(r, i)) {
+  if (intersectPortalAware(r, i)) {
     t = i.getT();
 
     const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
@@ -1108,7 +1296,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
   std::cerr << "== current depth: " << depth << std::endl;
 #endif
 
-  if (scene->intersect(r, i)) {
+  if (intersectPortalAware(r, i)) {
     t = i.getT();
 
     const Portal *portal = dynamic_cast<const Portal *>(i.getObject());
@@ -1835,8 +2023,9 @@ void RayTracer::buildPrimaryHitBuffer() {
 
       isect is;
       PrimaryHitInfo info;
-      if (scene->intersect(primaryRay, is)) {
+      if (intersectPortalAware(primaryRay, is)) {
         info.hit = true;
+        info.portalHit = (dynamic_cast<const Portal *>(is.getObject()) != nullptr);
         info.t = std::max(0.0, is.getT());
         glm::dvec3 n = is.getN();
         double nLen = glm::length(n);
@@ -1972,6 +2161,28 @@ void RayTracer::applyCelPostProcess() {
   }
 
   buildPrimaryHitBuffer();
+  const int celBins = std::max(1, traceUI->getCelBins());
+
+  // Quantize background/cubemap pixels so cel shading affects the full frame.
+  // Also quantize portal-hit primary pixels, since they can display cubemap
+  // through the portal even though they technically hit geometry.
+  if (threads > 0) {
+    omp_set_num_threads(threads);
+  }
+#pragma omp parallel for schedule(dynamic, 256)
+  for (int idx = 0; idx < static_cast<int>(primaryHitBuffer.size()); ++idx) {
+    const PrimaryHitInfo &hit = primaryHitBuffer[static_cast<size_t>(idx)];
+    if (hit.hit && !hit.portalHit) {
+      continue;
+    }
+    unsigned char *pixel = buffer.data() + static_cast<size_t>(idx) * 3;
+    glm::dvec3 rgb(pixel[0] / 255.0, pixel[1] / 255.0, pixel[2] / 255.0);
+    glm::dvec3 quantized = glm::clamp(quantizeLightness(rgb, celBins), 0.0, 1.0);
+    pixel[0] = static_cast<unsigned char>(255.0 * quantized[0]);
+    pixel[1] = static_cast<unsigned char>(255.0 * quantized[1]);
+    pixel[2] = static_cast<unsigned char>(255.0 * quantized[2]);
+  }
+
   applyCelOutlineFromPrimaryHits();
 }
 

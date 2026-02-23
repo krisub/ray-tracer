@@ -73,6 +73,7 @@ public:
 private:
   struct PrimaryHitInfo {
     bool hit = false;
+    bool portalHit = false;
     double t = 0.0;
     glm::dvec3 normal{0.0, 0.0, 0.0};
     const SceneObject *object = nullptr;
@@ -96,6 +97,7 @@ private:
   glm::dvec3 traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
                              double &t,
                              const std::vector<const SceneObject *> &objStack);
+  bool intersectPortalAware(ray &r, isect &i) const;
   void accumulateReflectionOverlap(ray &r, const isect &i,
                                    const glm::dvec3 &Kr,
                                    const glm::dvec3 &thresh, int depth,
