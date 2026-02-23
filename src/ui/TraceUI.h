@@ -80,6 +80,7 @@ public:
   int getCausticPhotons() const { return m_causticPhotons; }
   double getCausticRadius() const { return m_causticRadius; }
   int getCausticGather() const { return m_causticGather; }
+  bool getFresnel() const { return m_fresnel; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -173,6 +174,7 @@ protected:
   int m_causticPhotons = 0;        // number of caustic photons to emit (0=disabled)
   double m_causticRadius = 0.5;    // search radius for caustic photon gathering
   int m_causticGather = 100;       // max photons to gather per shading point
+  bool m_fresnel = false;           // Cook-Torrance microfacet BRDF with Fresnel
 
   std::unique_ptr<CubeMap> cubemap;
 

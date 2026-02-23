@@ -55,6 +55,7 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"caustic-photons", required_argument, nullptr, 1017},
       {"caustic-radius", required_argument, nullptr, 1018},
       {"caustic-gather", required_argument, nullptr, 1019},
+      {"fresnel", no_argument, nullptr, 1020},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -143,6 +144,9 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       break;
     case 1019: // --caustic-gather
       m_causticGather = atoi(optarg);
+      break;
+    case 1020: // --fresnel
+      m_fresnel = true;
       break;
     default:
       // Oops; unknown argument

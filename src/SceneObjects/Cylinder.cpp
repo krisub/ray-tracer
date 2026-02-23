@@ -65,6 +65,9 @@ bool Cylinder::intersectBody(const ray &r, isect &i) const {
       // It's okay.
       i.setT(t1);
       i.setN(glm::normalize(glm::dvec3(P[0], P[1], 0.0)));
+      // tangent frame: dPdu wraps around circumference, dPdv along axis
+      i.setTangentFrame(glm::dvec3(-P[1], P[0], 0.0),
+                        glm::dvec3(0.0, 0.0, 1.0));
       return true;
     }
   }
@@ -82,6 +85,9 @@ bool Cylinder::intersectBody(const ray &r, isect &i) const {
       normal = -normal;
 
     i.setN(glm::normalize(normal));
+    // tangent frame: dPdu wraps around circumference, dPdv along axis
+    i.setTangentFrame(glm::dvec3(-P[1], P[0], 0.0),
+                      glm::dvec3(0.0, 0.0, 1.0));
     return true;
   }
 
@@ -125,6 +131,8 @@ bool Cylinder::intersectCaps(const ray &r, isect &i) const {
       } else {
         i.setN(glm::dvec3(0.0, 0.0, 1.0));
       }
+      i.setTangentFrame(glm::dvec3(1.0, 0.0, 0.0),
+                        glm::dvec3(0.0, 1.0, 0.0));
       return true;
     }
   }
@@ -138,6 +146,8 @@ bool Cylinder::intersectCaps(const ray &r, isect &i) const {
     } else {
       i.setN(glm::dvec3(0.0, 0.0, -1.0));
     }
+    i.setTangentFrame(glm::dvec3(1.0, 0.0, 0.0),
+                      glm::dvec3(0.0, 1.0, 0.0));
     return true;
   }
 

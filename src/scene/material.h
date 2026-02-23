@@ -405,6 +405,16 @@ public:
   /** @brief returns true if material has a height map */
   bool hasHeightMap() const { return _heightMap != nullptr; }
 
+  /** @brief set metallic factor (0=dielectric, 1=metal) */
+  void setMetallic(double m) { _metallic = m; }
+  /** @brief get metallic factor */
+  double metallic() const { return _metallic; }
+
+  /** @brief set anisotropy factor (-1..1, 0=isotropic) */
+  void setAnisotropy(double a) { _anisotropy = a; }
+  /** @brief get anisotropy factor */
+  double anisotropy() const { return _anisotropy; }
+
   
   bool isVolumetric() const { return _volumetric; }
   void setVolumetric(bool v) { _volumetric = v; }
@@ -473,6 +483,8 @@ private:
   double _normalMapStrength = 3.0;  ///< strength multiplier for normal map bumps
   TextureMap *_heightMap = nullptr; ///< optional height map for parallax mapping
   double _parallaxScale = 0.1;      ///< parallax height scale (LearnOpenGL uses ~0.1)
+  double _metallic = 0.0;            ///< metallic factor (0=dielectric, 1=metal)
+  double _anisotropy = 0.0;          ///< anisotropy factor (-1..1, 0=isotropic)
 
   // volumetric/participating media properties for ray marching
   bool _volumetric = false;              ///< is this a volumetric object?

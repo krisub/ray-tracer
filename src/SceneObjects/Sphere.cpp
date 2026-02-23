@@ -72,10 +72,12 @@ bool Sphere::intersectLocal(ray &r, isect &i) const {
   glm::dvec3 localHit = glm::normalize(r.at(t));
   i.setN(localHit);
 
-  // Spherical UV mapping for texture coordinates
-  double u = 0.5 + std::atan2(localHit.y, localHit.x) / (2.0 * M_PI);
-  double texV = std::acos(std::max(-1.0, std::min(1.0, localHit.z))) / M_PI;
+  // spherical UV mapping + tangent frame for texture coordinates and anisotropy
+  double u, texV;
+  glm::dvec3 dPdu, dPdv;
+  sphereUVAndTangentFrame(localHit, u, texV, dPdu, dPdv);
   i.setUVCoordinates(glm::dvec2(u, texV));
+  i.setTangentFrame(dPdu, dPdv);
 
   return true;
 }

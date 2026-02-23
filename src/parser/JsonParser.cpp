@@ -176,6 +176,8 @@ Material parseMaterial(const json &j, ParseData &pd) {
     m.setHeightMap(pd.s->getTexture(texPath.string()));
   }
   IGNORE_MISSING(m.setParallaxScale(j.at("parallax_scale").get<double>()));
+  IGNORE_MISSING(m.setMetallic(j.at("metallic").get<double>()));
+  IGNORE_MISSING(m.setAnisotropy(j.at("anisotropy").get<double>()));
 
   if (hasKey(j, "volume")) {
     const json &vol = j.at("volume");

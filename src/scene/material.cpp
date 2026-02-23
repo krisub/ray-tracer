@@ -21,6 +21,50 @@ extern bool debugMode;
 
 Material::~Material() {}
 
+// cook torrance microfacet brdf
+namespace microfacet {
+
+// schlick fresnel approximation (per channel for metallic appearance)
+// F0 = base reflectance: 0.04 for dielectrics, ks color for metals
+inline glm::dvec3 fresnelSchlick(double cosTheta, const glm::dvec3 &F0) {
+  double t = 1.0 - cosTheta;
+  double t2 = t * t;
+  double t5 = t2 * t2 * t;
+  return F0 + (glm::dvec3(1.0) - F0) * t5;
+}
+
+// GGX / trowbridge teitz isotropic normal distribution function
+// alpha = roughness^2
+inline double distributionGGX(double NdotH, double alpha) {
+  double a2 = alpha * alpha;
+  double denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+  return a2 / (M_PI * denom * denom);
+}
+
+// GGX anisotropic normal distribution function
+// alphaX, alphaY = roughness along tangent and bitangent
+inline double distributionGGXAniso(double NdotH, double TdotH, double BdotH,
+                                   double alphaX, double alphaY) {
+  double tx = TdotH / alphaX;
+  double bx = BdotH / alphaY;
+  double denom = tx * tx + bx * bx + NdotH * NdotH;
+  return 1.0 / (M_PI * alphaX * alphaY * denom * denom);
+}
+
+// smith GGX geometry term (single direction)
+inline double geometrySchlickGGX(double NdotX, double alpha) {
+  // G1(x) = 2*NdotX / (NdotX + sqrt(alpha^2 + (1 - alpha^2)*NdotX^2))
+  double a2 = alpha * alpha;
+  return 2.0 * NdotX /
+         (NdotX + std::sqrt(a2 + (1.0 - a2) * NdotX * NdotX));
+}
+
+inline double geometrySmith(double NdotV, double NdotL, double alpha) {
+  return geometrySchlickGGX(NdotV, alpha) * geometrySchlickGGX(NdotL, alpha);
+}
+
+} // namespace microfacet
+
 /*
 get Emissive component (self-glowing light)
 glm::dvec3 ke(const isect &i) const { return _ke.value(i); }
@@ -107,14 +151,14 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   glm::dvec2 uv = i.getUVCoordinates();
   isect iTex(i);
 
-  // Parallax mapping: offset UV based on view and height map (or normal map as fallback)
+  // parallax mapping: offset UV based on view and height map (or normal map as fallback)
   bool doParallax = traceUI && traceUI->getParallaxMapping() && i.hasTangentFrame() &&
       (hasHeightMap() || hasNormalMap());
   if (doParallax) {
     glm::dvec3 viewDir = -r.getDirection();
     glm::dvec3 dPdu = i.getDpDu();
     glm::dvec3 dPdv = i.getDpDv();
-    // Fallback tangent when dPdu is degenerate (e.g. sphere poles) to avoid NaN
+    // fallback tangent when dPdu is degenerate (sphere poles) to avoid NaN
     if (glm::length(dPdu) < 1e-6) {
       glm::dvec3 up(0, 1, 0);
       if (std::abs(glm::dot(surfaceNormal, up)) > 0.99)
@@ -130,8 +174,6 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     glm::dvec3 viewDirTS(glm::dot(viewDir, T), glm::dot(viewDir, B),
                   glm::dot(viewDir, surfaceNormal));
     if (viewDirTS.z > 1e-6) {
-      // Height/depth drives offset magnitude. Use sampled value directly:
-      // Height map: white=high bumps → large offset. Normal map fallback: z~1 (flat faces) → large offset.
       double height = hasHeightMap()
           ? interp::luminance601(_heightMap->getMappedValue(uv))
           : (0.5 + 0.5 * _normalMap->getMappedValue(uv).z);
@@ -178,6 +220,60 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
   const glm::dvec3 cameraDir = -r.getDirection();  // ray dir is unit
 
+  // precompute params
+  bool useCookTorrance = traceUI && traceUI->getFresnel();
+  double ct_roughness = 0.0;
+  double ct_alpha = 0.0;
+  double ct_alphaX = 0.0, ct_alphaY = 0.0;
+  glm::dvec3 ct_F0(0.04);  // default dielectric
+  glm::dvec3 ct_tangent(0.0), ct_bitangent(0.0);
+  bool ct_aniso = false;
+
+  if (useCookTorrance) {
+    double shine = shininess(iTex);
+    ct_roughness = std::sqrt(2.0 / (std::max(1.0, shine) + 2.0));
+    ct_roughness = glm::clamp(ct_roughness, 0.04, 1.0);
+    // use roughness directly as alpha (not roughness^2) so GGX highlight
+    // width is visually comparable to Phong at the same shininess
+    ct_alpha = ct_roughness;
+
+    // F0: for metals use specular color; for dielectrics derive from ks
+    // brightness so highlight intensity scales with the material's ks
+    // (standard dielectric F0=0.04 is too faint compared to Phong ks highlight)
+    double met = _metallic;
+    glm::dvec3 ksVal = ks(iTex);
+    double ksLum = 0.2126 * ksVal.x + 0.7152 * ksVal.y + 0.0722 * ksVal.z;
+    glm::dvec3 dielectricF0 = glm::dvec3(0.02 + 0.12 * ksLum);
+    ct_F0 = glm::mix(dielectricF0, ksVal, met);
+
+    // anisotropy: split roughness into two axes
+    double aniso = _anisotropy;
+    if (std::abs(aniso) > 1e-6 && i.hasTangentFrame()) {
+      ct_aniso = true;
+      // aspect = sqrt(1 - 0.9 * anisotropy)
+      double aspect = std::sqrt(1.0 - 0.9 * glm::clamp(aniso, -1.0, 1.0));
+      ct_alphaX = ct_alpha / aspect;
+      ct_alphaY = ct_alpha * aspect;
+      ct_alphaX = std::max(ct_alphaX, 0.001);
+      ct_alphaY = std::max(ct_alphaY, 0.001);
+
+      // build tangent frame from dPdu/dPdv (follows surface parameterization:
+      // latitude lines on sphere, grain direction on plane)
+      glm::dvec3 dPdu = i.getDpDu();
+      if (glm::length(dPdu) < 1e-6) {
+        glm::dvec3 up(0, 1, 0);
+        if (std::abs(glm::dot(surfaceNormal, up)) > 0.99)
+          up = glm::dvec3(0, 0, 1);
+        dPdu = glm::normalize(glm::cross(up, surfaceNormal));
+      }
+      ct_tangent = glm::normalize(dPdu -
+          surfaceNormal * glm::dot(surfaceNormal, dPdu));
+      ct_bitangent = glm::cross(surfaceNormal, ct_tangent);
+      if (glm::dot(glm::cross(ct_tangent, ct_bitangent), surfaceNormal) < 0.0)
+        ct_bitangent = -ct_bitangent;
+    }
+  }
+
   glm::dvec3 color = ke(iTex) + ka(iTex) * scene->ambient();
 
   for (const auto &pLight : scene->getAllLights()) {
@@ -205,10 +301,51 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     } else {
       diffuseReflection = std::max(0.0, diffuseDot);
     }
-    
-    // if (kd(i) != glm::dvec3(0, 0, 0))
-    //   cout << "kd is " << kd(i) << endl;
 
+    // only do specular if diffuse component exists
+    glm::dvec3 effectiveNormal =
+        (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
+
+    if (useCookTorrance) {
+      double NdotL = std::max(glm::dot(effectiveNormal, dirToLight), 0.0);
+      if (NdotL <= 0.0) continue;  // light behind surface
+
+      double NdotV = std::max(glm::dot(effectiveNormal, cameraDir), 1e-4);
+      glm::dvec3 H = glm::normalize(dirToLight + cameraDir);
+      double NdotH = glm::clamp(glm::dot(effectiveNormal, H), 0.0, 1.0);
+      double VdotH = glm::clamp(glm::dot(cameraDir, H), 0.0, 1.0);
+
+      double D;
+      if (ct_aniso) {
+        double TdotH = glm::dot(ct_tangent, H);
+        double BdotH = glm::dot(ct_bitangent, H);
+        D = microfacet::distributionGGXAniso(NdotH, TdotH, BdotH,
+                                             ct_alphaX, ct_alphaY);
+      } else {
+        D = microfacet::distributionGGX(NdotH, ct_alpha);
+      }
+
+      glm::dvec3 F = microfacet::fresnelSchlick(VdotH, ct_F0);
+      double G = microfacet::geometrySmith(NdotV, NdotL, ct_alpha);
+      double denom = 4.0 * NdotL * NdotV;
+      glm::dvec3 specular = (denom > 1e-12)
+          ? (D * G / denom) * F * pLight->getColor() * NdotL
+          : glm::dvec3(0.0);
+
+      glm::dvec3 kD_factor = (glm::dvec3(1.0) - F) * (1.0 - _metallic);
+      // metals: add a small diffuse tinted by metallic color to prevent
+      // pure black body when there is no environment map for reflections
+      glm::dvec3 diffuse = kD_factor * kd(iTex) * pLight->getColor() * NdotL
+          + _metallic * ct_F0 * 0.22 * pLight->getColor() * NdotL;
+
+      color += distAtten * shadowAtten * (diffuse + specular);
+      if (traceUI && traceUI->getGoop() &&
+          (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
+           emissionAlongPath.z > 1e-9)) {
+        color += emissionAlongPath * (kD_factor * kd(iTex) * NdotL + specular);
+      }
+    } else {
+    
     if (diffuseReflection > 0) {
       glm::dvec3 diffuse = kd(iTex) * pLight->getColor() * diffuseReflection;
       color += distAtten * shadowAtten * diffuse;
@@ -218,29 +355,26 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
         color += emissionAlongPath * kd(iTex) * diffuseReflection;
     }
 
-    // only do specular if diffuse component exists
-    glm::dvec3 effectiveNormal =
-        (diffuseDot < 0) ? -surfaceNormal : surfaceNormal;
-    // reflection formula R = 2*dot(N,L)*N - L yields unit vector when N,L are unit
-    glm::dvec3 reflectionVector =
-        (2.0 * glm::abs(diffuseDot) * effectiveNormal) - dirToLight;
+      // reflection formula R = 2*dot(N,L)*N - L yields unit vector when N,L are unit
+      glm::dvec3 reflectionVector =
+          (2.0 * glm::abs(diffuseDot) * effectiveNormal) - dirToLight;
 
-    double specularReflection = glm::dot(reflectionVector, cameraDir);
-    if (specularReflection > 0) {
-      double shine = shininess(iTex);
-      glm::dvec3 specular =
-          ks(iTex) * pLight->getColor() * pow(specularReflection, shine);
-      color += distAtten * shadowAtten * specular;
-      if (traceUI && traceUI->getGoop() &&
-          (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
-           emissionAlongPath.z > 1e-9))
-        color += emissionAlongPath * ks(iTex) * pow(specularReflection, shine);
+      double specularReflection = glm::dot(reflectionVector, cameraDir);
+      if (specularReflection > 0) {
+        double shine = shininess(iTex);
+        glm::dvec3 specular =
+            ks(iTex) * pLight->getColor() * pow(specularReflection, shine);
+        color += distAtten * shadowAtten * specular;
+        if (traceUI && traceUI->getGoop() &&
+            (emissionAlongPath.x > 1e-9 || emissionAlongPath.y > 1e-9 ||
+             emissionAlongPath.z > 1e-9))
+          color += emissionAlongPath * ks(iTex) * pow(specularReflection, shine);
+      }
     }
   }
 
   // area lights from emissive objects (only when --goop): sample surface, cast
   // shadow ray; if we hit the emissive object we're lit, else blocked.
-  // Disabled: spec wants path-integrated emission only, not area-light behavior.
   constexpr bool kUseEmissiveAsAreaLights = false;
   if (kUseEmissiveAsAreaLights && traceUI && traceUI->getGoop()) {
   const std::vector<SceneObject *> emissiveObjs = scene->getEmissiveObjects();
