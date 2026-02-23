@@ -176,6 +176,22 @@ Material parseMaterial(const json &j, ParseData &pd) {
     m.setHeightMap(pd.s->getTexture(texPath.string()));
   }
   IGNORE_MISSING(m.setParallaxScale(j.at("parallax_scale").get<double>()));
+
+  if (hasKey(j, "volume")) {
+    const json &vol = j.at("volume");
+    m.setVolumetric(true);
+    IGNORE_MISSING(m.setVolumeAbsorption(vol.at("absorption").get<glm::dvec3>()));
+    IGNORE_MISSING(m.setVolumeScattering(vol.at("scattering").get<glm::dvec3>()));
+    IGNORE_MISSING(m.setVolumePhaseG(vol.at("phase_g").get<double>()));
+    IGNORE_MISSING(m.setVolumeEmission(vol.at("emission").get<glm::dvec3>()));
+    IGNORE_MISSING(m.setVolumeDensity(vol.at("density").get<double>()));
+    IGNORE_MISSING(m.setVolumeStepSize(vol.at("step_size").get<double>()));
+    IGNORE_MISSING(m.setVolumeNoiseScale(vol.at("noise_scale").get<double>()));
+    IGNORE_MISSING(m.setVolumeNoiseOctaves(vol.at("noise_octaves").get<int>()));
+    IGNORE_MISSING(m.setVolumeNoiseGain(vol.at("noise_gain").get<double>()));
+    IGNORE_MISSING(m.setVolumeFalloff(vol.at("falloff").get<double>()));
+  }
+
   return m;
 }
 

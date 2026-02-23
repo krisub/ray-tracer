@@ -9,6 +9,6 @@ ray-solution
 noaa
 run.sh
 out.png
-frames
+frames*
 out.txt
 out*.png

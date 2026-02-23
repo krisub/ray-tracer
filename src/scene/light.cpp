@@ -94,6 +94,26 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
       }
 
       const Material &m = i.getMaterial();
+
+      // apply Beer-Lambert attenuation through volumetric objects
+      if (m.isVolumetric()) {
+        const SceneObject *volObj = i.getObject();
+        glm::dvec3 entryPt = shadowRay.at(i.getT());
+        ray exitRay(entryPt + dirToLight * RAY_EPSILON, dirToLight,
+                    glm::dvec3(1,1,1), ray::SHADOW);
+        isect exitHit;
+        double pathLen = 0.0;
+        if (volObj->intersect(exitRay, exitHit)) {
+          pathLen = exitHit.getT();
+        }
+        glm::dvec3 sigma_t = m.volumeExtinction() * m.volumeDensity();
+        lightAtten *= glm::dvec3(std::exp(-sigma_t.x * pathLen),
+                                 std::exp(-sigma_t.y * pathLen),
+                                 std::exp(-sigma_t.z * pathLen));
+        currPoint = exitRay.at(pathLen) + dirToLight * RAY_EPSILON;
+        continue;
+      }
+
       glm::dvec3 kt = m.kt(i);
 
       if (glm::length(kt) < 1e-6) {
@@ -304,7 +324,27 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
             }
           }
 
-          glm::dvec3 kt = i.getMaterial().kt(i);
+          const Material &hitMat = i.getMaterial();
+          // pass through
+          if (hitMat.isVolumetric()) {
+            const SceneObject *volObj = i.getObject();
+            glm::dvec3 entryPt = shadowRay.at(i.getT());
+            ray exitRay(entryPt + dirToLight * RAY_EPSILON, dirToLight,
+                        glm::dvec3(1,1,1), ray::SHADOW);
+            isect exitHit;
+            double pathLen = 0.0;
+            if (volObj->intersect(exitRay, exitHit)) {
+              pathLen = exitHit.getT();
+            }
+            glm::dvec3 sigma_t = hitMat.volumeExtinction() * hitMat.volumeDensity();
+            lightAtten *= glm::dvec3(std::exp(-sigma_t.x * pathLen),
+                                     std::exp(-sigma_t.y * pathLen),
+                                     std::exp(-sigma_t.z * pathLen));
+            currPoint = exitRay.at(pathLen) + dirToLight * RAY_EPSILON;
+            continue;
+          }
+
+          glm::dvec3 kt = hitMat.kt(i);
           if (glm::length(kt) < 1e-6) {
             lightAtten = glm::dvec3(0.0, 0.0, 0.0);
             break;
@@ -379,7 +419,27 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
         }
       }
 
-      glm::dvec3 kt = i.getMaterial().kt(i);
+      const Material &hitMat = i.getMaterial();
+
+      if (hitMat.isVolumetric()) {
+        const SceneObject *volObj = i.getObject();
+        glm::dvec3 entryPt = shadowRay.at(i.getT());
+        ray exitRay(entryPt + dirToLight * RAY_EPSILON, dirToLight,
+                    glm::dvec3(1,1,1), ray::SHADOW);
+        isect exitHit;
+        double pathLen = 0.0;
+        if (volObj->intersect(exitRay, exitHit)) {
+          pathLen = exitHit.getT();
+        }
+        glm::dvec3 sigma_t = hitMat.volumeExtinction() * hitMat.volumeDensity();
+        lightAtten *= glm::dvec3(std::exp(-sigma_t.x * pathLen),
+                                 std::exp(-sigma_t.y * pathLen),
+                                 std::exp(-sigma_t.z * pathLen));
+        currPoint = exitRay.at(pathLen) + dirToLight * RAY_EPSILON;
+        continue;
+      }
+
+      glm::dvec3 kt = hitMat.kt(i);
       if (glm::length(kt) < 1e-6) {
         return glm::dvec3(0.0, 0.0, 0.0);
       }
@@ -390,7 +450,7 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
         double distance = i.getT();
         lightAtten *= glm::pow(kt, glm::dvec3(distance, distance, distance));
         if (emissionOut && traceUI->getGoop()) {
-          glm::dvec3 Le = i.getMaterial().ke(i);
+          glm::dvec3 Le = hitMat.ke(i);
           if (Le.x > 1e-9 || Le.y > 1e-9 || Le.z > 1e-9)
             *emissionOut += integratedEmissiveAlongPath(Le, kt, distance);
         }

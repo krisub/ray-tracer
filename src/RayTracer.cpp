@@ -21,6 +21,7 @@
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
+#include <glm/gtc/noise.hpp>
 #include <string.h> // for memset
 
 #include <fstream>
@@ -840,6 +841,200 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 
 #define VERBOSE 0
 
+/**
+ * Henyey-Greenstein phase function
+ * p(cosTheta, g) = (1 - g^2) / (4*pi * (1 + g^2 - 2*g*cosTheta)^(3/2))
+ *
+ * g=0, isotropic scattering
+ * g>0, forward scattering (like fog/smoke)
+ * g<0, backward scattering
+ */
+static double henyeyGreenstein(double cosTheta, double g) {
+  constexpr double inv4pi = 1.0 / (4.0 * M_PI);
+  if (std::abs(g) < 1e-6) {
+    return inv4pi; // isotropic
+  }
+  double g2 = g * g;
+  double denom = 1.0 + g2 - 2.0 * g * cosTheta;
+  denom = std::pow(denom, 1.5);
+  return inv4pi * (1.0 - g2) / denom;
+}
+
+/**
+ * Beer-Lambert transmittance for a homogeneous medium
+ * T(s) = exp(-sigma_t * s) applied per channel
+ */
+static glm::dvec3 beerLambertTransmittance(const glm::dvec3 &sigma_t, double distance) {
+  return glm::dvec3(std::exp(-sigma_t.x * distance),
+                    std::exp(-sigma_t.y * distance),
+                    std::exp(-sigma_t.z * distance));
+}
+
+static double fbmDensity(const glm::dvec3 &worldPos, double noiseScale,
+                         int octaves, double gain) {
+  glm::vec3 p = glm::vec3(worldPos * noiseScale);
+  float n = 0.0f, amp = 1.0f, freq = 1.0f, totalAmp = 0.0f;
+  for (int i = 0; i < octaves; ++i) {
+    n += amp * std::abs(glm::perlin(p * freq));
+    totalAmp += amp;
+    freq *= 2.0f;
+    amp *= static_cast<float>(gain);
+  }
+  double normalized = static_cast<double>(n / totalAmp);
+  return glm::clamp(normalized, 0.0, 1.0);
+}
+
+/**
+ * ray march through a volumetric participating medium inside an object.
+ *
+ * @param r           The incoming ray  
+ * @param tNear       Entry distance into the volume (along ray)
+ * @param tFar        Exit distance from the volume (along ray)
+ * @param mat         Material with volume properties
+ * @param scene       The scene (for lights and shadow queries)
+ * @param thresh      Adaptive termination threshold
+ * @param depth       Remaining recursion depth
+ * @param behindColor Color of whatever is behind the volume (attenuated by total transmittance)
+ * @return            Final accumulated color through the volume
+ */
+
+struct VolumeInterval {
+  const SceneObject *obj;
+  const Material *mat;
+  double tNear, tFar;
+};
+
+static glm::dvec3 volumeShadowAttenuation(
+    const Light *light, const glm::dvec3 &samplePos,
+    const std::vector<VolumeInterval> &volumes, Scene *scene) {
+
+  glm::dvec3 lightDir = light->getDirection(samplePos);
+
+  // for each volume, find how much of the shadow ray is still inside it
+  // and apply Beer-Lambert for that segment
+  glm::dvec3 volAtten(1.0);
+  double maxExitDist = 0.0;
+  for (const auto &vol : volumes) {
+    ray toExit(samplePos + lightDir * RAY_EPSILON, lightDir,
+               glm::dvec3(1, 1, 1), ray::SHADOW);
+    isect exitHit;
+    if (vol.obj->intersect(toExit, exitHit)) {
+      double dist = exitHit.getT();
+      glm::dvec3 sigma_t = vol.mat->volumeExtinction() * vol.mat->volumeDensity();
+      volAtten *= beerLambertTransmittance(sigma_t, dist);
+      maxExitDist = std::max(maxExitDist, dist);
+    }
+  }
+
+  glm::dvec3 exitPoint = samplePos + lightDir * (maxExitDist + 2.0 * RAY_EPSILON);
+  ray shadowRay(exitPoint, lightDir, glm::dvec3(1, 1, 1), ray::SHADOW);
+  glm::dvec3 sceneAtten = light->shadowAttenuation(
+      shadowRay, glm::dvec3(0, 0, 0), exitPoint);
+
+  return volAtten * sceneAtten;
+}
+
+
+static double sampleVolumeDensity(const glm::dvec3 &samplePos,
+                                  const SceneObject *volObj,
+                                  const Material &mat) {
+  double localDensity = mat.volumeDensity();
+  double falloff = mat.volumeFalloff();
+  double noiseScale = mat.volumeNoiseScale();
+
+  if (falloff > 1e-9) {
+    glm::dvec3 localPos = volObj->getTransform().globalToLocalCoords(samplePos);
+    double r = glm::length(localPos);
+    localDensity *= std::exp(-falloff * r * r);
+  }
+
+  if (noiseScale > 1e-9) {
+    double noiseFactor = fbmDensity(samplePos, noiseScale,
+                                   mat.volumeNoiseOctaves(),
+                                   mat.volumeNoiseGain());
+    localDensity *= noiseFactor;
+  }
+
+  return localDensity;
+}
+
+glm::dvec3 RayTracer::traceVolumetric(ray &r, double tNear, double tFar,
+                                      const std::vector<VolumeInterval> &volumes,
+                                      const glm::dvec3 &thresh, int depth,
+                                      const glm::dvec3 &behindColor) {
+  // Use the smallest step size among all volumes
+  double stepSize = 0.02;
+  for (const auto &vol : volumes) {
+    stepSize = std::min(stepSize, vol.mat->volumeStepSize());
+  }
+
+  double pathLength = tFar - tNear;
+  if (pathLength <= 0.0) return behindColor;
+
+  int numSteps = std::max(1, static_cast<int>(std::ceil(pathLength / stepSize)));
+  double dt = pathLength / numSteps;
+
+  glm::dvec3 accumulatedColor(0.0);
+  glm::dvec3 transmittance(1.0);
+  const glm::dvec3 &rayDir = r.getDirection();
+
+  for (int step = 0; step < numSteps; ++step) {
+    double tSample = tNear + (step + 0.5) * dt;
+    glm::dvec3 samplePos = r.at(tSample);
+
+    // Sum contributions from ALL volumes at this sample point
+    glm::dvec3 sigma_a(0.0), sigma_s(0.0), volEmission(0.0);
+    double avgG = 0.0;
+    double totalWeight = 0.0;
+
+    for (const auto &vol : volumes) {
+      // Skip volumes we're not inside at this t
+      if (tSample < vol.tNear || tSample > vol.tFar) continue;
+
+      double d = sampleVolumeDensity(samplePos, vol.obj, *vol.mat);
+      if (d < 1e-8) continue;
+
+      sigma_a += vol.mat->volumeAbsorption() * d;
+      sigma_s += vol.mat->volumeScattering() * d;
+      volEmission += vol.mat->volumeEmission() * d;
+      avgG += vol.mat->volumePhaseG() * d;
+      totalWeight += d;
+    }
+
+    if (totalWeight < 1e-8) continue;
+
+    double g = avgG / totalWeight;  // density-weighted average phase
+    glm::dvec3 sigma_t = sigma_a + sigma_s;
+
+    glm::dvec3 stepTransmittance = beerLambertTransmittance(sigma_t, dt);
+    glm::dvec3 emissionContrib = volEmission * dt;
+    glm::dvec3 inscatter(0.0);
+
+    for (auto lightIter = scene->beginLights();
+         lightIter != scene->endLights(); ++lightIter) {
+      const Light *light = *lightIter;
+      glm::dvec3 lightDir = light->getDirection(samplePos);
+      glm::dvec3 shadowAtten = volumeShadowAttenuation(
+          light, samplePos, volumes, scene.get());
+      double distAtten = light->distanceAttenuation(samplePos);
+      double cosTheta = glm::dot(rayDir, lightDir);
+      double phase = henyeyGreenstein(cosTheta, g);
+      glm::dvec3 lightColor = light->getColor();
+      inscatter += sigma_s * phase * lightColor * shadowAtten * distAtten * dt;
+    }
+
+    accumulatedColor += transmittance * (emissionContrib + inscatter);
+    transmittance *= stepTransmittance;
+
+    if (transmittance.x < 1e-6 && transmittance.y < 1e-6 && transmittance.z < 1e-6) {
+      break;
+    }
+  }
+
+  accumulatedColor += transmittance * behindColor;
+  return accumulatedColor;
+}
+
 // Do recursive ray tracing! You'll want to insert a lot of code here (or places
 // called from here) to handle reflection, refraction, etc etc.
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
@@ -889,24 +1084,73 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     }
 
     const Material &m = i.getMaterial();
-    colorC = m.shade(scene.get(), r, i);
 
-    if (useDistributedGI && giNumSamples > 0 && depth > 1) {
-      glm::dvec3 kd = m.kd(i);
-      glm::dvec3 ks = m.ks(i);
-      double shininess = m.shininess(i);
-      BRDF brdf = BRDF::fromPhong(kd, ks, shininess);
 
-      glm::dvec3 indirectColor =
-          computeIndirectIllumination(r, i, brdf, thresh, depth, giNumSamples);
-      colorC += giIntensity * indirectColor;
+    if (m.isVolumetric()) {
+      // Gather ALL volumetric objects the ray intersects
+      std::vector<VolumeInterval> volumes;
+      double unionNear = 1e30, unionFar = -1e30;
+
+      for (auto it = scene->beginObjects(); it != scene->endObjects(); ++it) {
+        const SceneObject *obj = dynamic_cast<const SceneObject *>(*it);
+        if (!obj || !obj->getMaterial().isVolumetric()) continue;
+
+        ray testRay(r.getPosition(), r.getDirection(),
+                    glm::dvec3(1, 1, 1), ray::VISIBILITY);
+        isect entryIsect;
+        if (!obj->intersect(testRay, entryIsect)) continue;
+
+        double tN = entryIsect.getT();
+        // find exit
+        glm::dvec3 entryPt = testRay.at(tN);
+        ray exitRay(entryPt + r.getDirection() * RAY_EPSILON,
+                    r.getDirection(), glm::dvec3(1, 1, 1), ray::VISIBILITY);
+        isect exitIsect;
+        double tF = tN;
+        if (obj->intersect(exitRay, exitIsect)) {
+          tF = tN + RAY_EPSILON + exitIsect.getT();
+        } else {
+          tF = tN + 20.0;
+        }
+
+        volumes.push_back({obj, &obj->getMaterial(), tN, tF});
+        unionNear = std::min(unionNear, tN);
+        unionFar = std::max(unionFar, tF);
+      }
+
+      if (volumes.empty()) {
+        // shouldn't happen but fall through to surface shading
+        colorC = m.shade(scene.get(), r, i);
+      } else {
+        // behind color: trace ray past all volumes
+        glm::dvec3 exitPoint = r.at(unionFar);
+        ray behindRay(exitPoint + r.getDirection() * RAY_EPSILON,
+                      r.getDirection(), r.getAtten(), ray::VISIBILITY);
+        double tBehind;
+        glm::dvec3 behindColor = traceRay(behindRay, thresh, depth - 1, tBehind);
+
+        colorC = traceVolumetric(r, unionNear, unionFar, volumes, thresh, depth, behindColor);
+      }
+    } else {
+      colorC = m.shade(scene.get(), r, i);
+
+      if (useDistributedGI && giNumSamples > 0 && depth > 1) {
+        glm::dvec3 kd = m.kd(i);
+        glm::dvec3 ks = m.ks(i);
+        double shininess = m.shininess(i);
+        BRDF brdf = BRDF::fromPhong(kd, ks, shininess);
+
+        glm::dvec3 indirectColor =
+            computeIndirectIllumination(r, i, brdf, thresh, depth, giNumSamples);
+        colorC += giIntensity * indirectColor;
+      }
+
+      glm::dvec3 Kr = m.kr(i);
+      accumulateReflection(r, i, Kr, thresh, depth, colorC);
+
+      glm::dvec3 Kt = m.kt(i);
+      accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);
     }
-
-    glm::dvec3 Kr = m.kr(i);
-    accumulateReflection(r, i, Kr, thresh, depth, colorC);
-
-    glm::dvec3 Kt = m.kt(i);
-    accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);
 
   } else {
     t = 0.0;
@@ -1087,7 +1331,6 @@ void RayTracer::emitCausticPhotons() {
             double xi = dist01(rng) * totalLum;
 
             if (xi < krLum) {
-              // Specular reflection
               hadSpecularBounce = true;
               glm::dvec3 reflDir = computeReflectionDirection(
                   photonRay.getDirection(), normal);
@@ -1095,7 +1338,6 @@ void RayTracer::emitCausticPhotons() {
               photonRay = ray(hitPoint + reflDir * RAY_EPSILON, reflDir,
                               glm::dvec3(1.0), ray::REFLECTION);
             } else if (xi < krLum + ktLum) {
-              // Specular refraction
               hadSpecularBounce = true;
               double ior = mat.index(hit);
               double cosI = glm::dot(normal, photonRay.getDirection());
@@ -1111,7 +1353,6 @@ void RayTracer::emitCausticPhotons() {
               glm::dvec3 refrDir = computeRefractionDirection(
                   photonRay.getDirection(), normalForRefraction, iorRatio);
               if (glm::length(refrDir) < 1e-10) {
-                // Total internal reflection
                 glm::dvec3 reflDir = computeReflectionDirection(
                     photonRay.getDirection(), normalForRefraction);
                 power *= kr.x > 1e-6 || kr.y > 1e-6 || kr.z > 1e-6 ? kr : kt;
@@ -1123,7 +1364,6 @@ void RayTracer::emitCausticPhotons() {
                                 glm::dvec3(1.0), ray::REFRACTION);
               }
             } else {
-              // Diffuse absorption (no prior specular bounce → not a caustic)
               break;
             }
           }
@@ -1387,7 +1627,6 @@ void RayTracer::renderCurrentScene(int w, int h) {
         }
 
         if (maxDiff <= blockInterpThresh) {
-          // Interpolate interior
           const double denomX = std::max(1, ixR - x0);
           const double denomY = std::max(1, jyB - y0);
           for (int j = y0; j < y1; ++j) {
@@ -1423,7 +1662,6 @@ void RayTracer::renderCurrentScene(int w, int h) {
 void RayTracer::traceImage(int w, int h) {
   traceSetup(w, h);
 
-  // Build caustic photon map (pre-pass, only for path/distributed modes)
   if (causticPhotons > 0 && scene && (usePathIntegrator || useDistributedGI)) {
     emitCausticPhotons();
   }

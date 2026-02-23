@@ -132,6 +132,8 @@ public:
     this->transform = transform;
   };
 
+  const MatrixTransform &getTransform() const { return this->transform; }
+
   Geometry(Scene *scene) : SceneElement(scene) {}
 
   // For debugging purposes, draws using OpenGL

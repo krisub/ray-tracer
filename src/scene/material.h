@@ -405,6 +405,42 @@ public:
   /** @brief returns true if material has a height map */
   bool hasHeightMap() const { return _heightMap != nullptr; }
 
+  
+  bool isVolumetric() const { return _volumetric; }
+  void setVolumetric(bool v) { _volumetric = v; }
+
+  glm::dvec3 volumeAbsorption() const { return _volAbsorption; }
+  void setVolumeAbsorption(const glm::dvec3 &a) { _volAbsorption = a; }
+
+  glm::dvec3 volumeScattering() const { return _volScattering; }
+  void setVolumeScattering(const glm::dvec3 &s) { _volScattering = s; }
+
+  glm::dvec3 volumeExtinction() const { return _volAbsorption + _volScattering; }
+
+  double volumePhaseG() const { return _volPhaseG; }
+  void setVolumePhaseG(double g) { _volPhaseG = g; }
+
+  glm::dvec3 volumeEmission() const { return _volEmission; }
+  void setVolumeEmission(const glm::dvec3 &e) { _volEmission = e; }
+
+  double volumeDensity() const { return _volDensity; }
+  void setVolumeDensity(double d) { _volDensity = d; }
+
+  double volumeStepSize() const { return _volStepSize; }
+  void setVolumeStepSize(double s) { _volStepSize = s; }
+
+  double volumeNoiseScale() const { return _volNoiseScale; }
+  void setVolumeNoiseScale(double s) { _volNoiseScale = s; }
+
+  int volumeNoiseOctaves() const { return _volNoiseOctaves; }
+  void setVolumeNoiseOctaves(int o) { _volNoiseOctaves = o; }
+
+  double volumeNoiseGain() const { return _volNoiseGain; }
+  void setVolumeNoiseGain(double g) { _volNoiseGain = g; }
+
+  double volumeFalloff() const { return _volFalloff; }
+  void setVolumeFalloff(double f) { _volFalloff = f; }
+
   // get booleans for reflection and refraction
   bool Refl() const { return _refl; }   ///< is the material reflective?
   bool Trans() const { return _trans; } ///< is the material transmissive?
@@ -437,6 +473,19 @@ private:
   double _normalMapStrength = 3.0;  ///< strength multiplier for normal map bumps
   TextureMap *_heightMap = nullptr; ///< optional height map for parallax mapping
   double _parallaxScale = 0.1;      ///< parallax height scale (LearnOpenGL uses ~0.1)
+
+  // volumetric/participating media properties for ray marching
+  bool _volumetric = false;              ///< is this a volumetric object?
+  glm::dvec3 _volAbsorption{0,0,0};      ///< absorption coefficient sigma_a
+  glm::dvec3 _volScattering{0,0,0};      ///< scattering coefficient sigma_s
+  double _volPhaseG = 0.0;               ///< Henyey-Greenstein asymmetry (-1..1, 0=isotropic)
+  glm::dvec3 _volEmission{0,0,0};        ///< volume emission (radiance per unit distance)
+  double _volDensity = 1.0;              ///< density multiplier
+  double _volStepSize = 0.05;            ///< ray march step size (world units)
+  double _volNoiseScale = 0.0;           ///< noise spatial frequency (0 = homogeneous)
+  int    _volNoiseOctaves = 4;           ///< fBm octave count
+  double _volNoiseGain = 0.5;            ///< fBm amplitude decay per octave
+  double _volFalloff = 0.0;              ///< edge falloff exponent (0 = no falloff)
 
   void setBools() {
     _refl = !_kr.isZero();

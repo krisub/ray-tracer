@@ -97,6 +97,10 @@ private:
                                    glm::dvec3 &colorC,
                                    const std::vector<const SceneObject *> &objStack);
   static glm::dvec3 integratedEmissiveAlongPath(const glm::dvec3 &Le, const glm::dvec3 &Kt, double t);
+  glm::dvec3 traceVolumetric(ray &r, double tNear, double tFar,
+                             const std::vector<struct VolumeInterval> &volumes,
+                             const glm::dvec3 &thresh, int depth,
+                             const glm::dvec3 &behindColor);
   double averageIorFromObjects(
       const std::vector<const SceneObject *> &objStack,
       const isect &i) const;
