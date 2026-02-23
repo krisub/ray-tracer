@@ -11,6 +11,7 @@ extern int getopt(int argc, char **argv, const char *optstring);
 
 #include <assert.h>
 #include <getopt.h>
+#include <algorithm>
 
 #include "../fileio/images.h"
 #include "../parser/JsonParser.h"
@@ -56,6 +57,10 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
       {"caustic-radius", required_argument, nullptr, 1018},
       {"caustic-gather", required_argument, nullptr, 1019},
       {"fresnel", no_argument, nullptr, 1020},
+      {"cel", no_argument, nullptr, 1021},
+      {"cel-bins", required_argument, nullptr, 1022},
+      {"cel-edge-threshold", required_argument, nullptr, 1023},
+      {"cel-edge-thickness", required_argument, nullptr, 1024},
       {nullptr, 0, nullptr, 0}};
 
   while ((i = getopt_long(argc, argv, "r:w:j:c:t:n:ah", long_options,
@@ -148,6 +153,21 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
     case 1020: // --fresnel
       m_fresnel = true;
       break;
+    case 1021: // --cel
+      m_cel = true;
+      break;
+    case 1022: // --cel-bins
+      m_celBins = atoi(optarg);
+      m_cel = true;
+      break;
+    case 1023: // --cel-edge-threshold
+      m_celEdgeThreshold = atof(optarg);
+      m_cel = true;
+      break;
+    case 1024: // --cel-edge-thickness
+      m_celEdgeThickness = atoi(optarg);
+      m_cel = true;
+      break;
     default:
       // Oops; unknown argument
       std::cerr << "Invalid argument: '" << i << "'." << std::endl;
@@ -166,6 +186,9 @@ CommandLineUI::CommandLineUI(int argc, char **argv) : TraceUI() {
   if (m_forcePathSPP > 0) {
     m_pathSPP = m_forcePathSPP;
   }
+  m_celBins = std::max(1, m_celBins);
+  m_celEdgeThreshold = std::clamp(m_celEdgeThreshold, 0.0, 1.0);
+  m_celEdgeThickness = std::max(1, m_celEdgeThickness);
   if (!cubemap_file.empty()) {
     smartLoadCubemap(cubemap_file);
   }
@@ -213,6 +236,7 @@ int CommandLineUI::run() {
       }
       raytracer->waitRender();
     }
+    raytracer->applyCelPostProcess();
 
     end = clock();
 
@@ -320,6 +344,7 @@ int CommandLineUI::runAnimation() {
         raytracer->aaImage();
       raytracer->waitRender();
     }
+    raytracer->applyCelPostProcess();
 
     unsigned char *buf = nullptr;
     int outW = 0, outH = 0;
@@ -354,5 +379,13 @@ void CommandLineUI::usage() {
        << endl
        << "  -j <FILE>   set parameters from JSON file" << endl
        << "  -c <FILE>   one Cubemap file, the remainings will be "
-          "detected automatically" << endl;
+          "detected automatically" << endl
+       << "  --cel                 enable cel shading with outlines" << endl
+       << "  --cel-bins <#>        set cel lightness bins (default "
+       << m_celBins << ")" << endl
+       << "  --cel-edge-threshold <f> set outline edge threshold in [0,1] "
+          "(default "
+       << m_celEdgeThreshold << ")" << endl
+       << "  --cel-edge-thickness <#> set outline thickness (default "
+       << m_celEdgeThickness << ")" << endl;
 }

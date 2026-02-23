@@ -18,6 +18,7 @@
 
 #include "ui/TraceUI.h"
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
@@ -1736,6 +1737,174 @@ void RayTracer::traceImage(int w, int h) {
   }
 
   renderCurrentScene(w, h);
+}
+
+void RayTracer::buildPrimaryHitBuffer() {
+  primaryHitBuffer.assign(static_cast<size_t>(buffer_width) * buffer_height,
+                          PrimaryHitInfo{});
+  if (!scene || buffer_width <= 0 || buffer_height <= 0) {
+    return;
+  }
+
+  if (threads > 0) {
+    omp_set_num_threads(threads);
+  }
+
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+  for (int y = 0; y < buffer_height; ++y) {
+    for (int x = 0; x < buffer_width; ++x) {
+      if (stopTrace.load(std::memory_order_acquire)) {
+        continue;
+      }
+
+      const double nx = (static_cast<double>(x) + 0.5) /
+                        static_cast<double>(buffer_width);
+      const double ny = (static_cast<double>(y) + 0.5) /
+                        static_cast<double>(buffer_height);
+      ray primaryRay(glm::dvec3(0.0), glm::dvec3(0.0), glm::dvec3(1.0),
+                     ray::VISIBILITY);
+      scene->getCamera().rayThrough(nx, ny, primaryRay);
+
+      isect is;
+      PrimaryHitInfo info;
+      if (scene->intersect(primaryRay, is)) {
+        info.hit = true;
+        info.t = std::max(0.0, is.getT());
+        glm::dvec3 n = is.getN();
+        double nLen = glm::length(n);
+        info.normal = (nLen > 1e-12) ? (n / nLen) : glm::dvec3(0.0, 0.0, 1.0);
+        info.object = is.getObject();
+      }
+      primaryHitBuffer[static_cast<size_t>(x + y * buffer_width)] = info;
+    }
+  }
+}
+
+void RayTracer::applyCelOutlineFromPrimaryHits() {
+  const size_t pixelCount = static_cast<size_t>(buffer_width) * buffer_height;
+  if (primaryHitBuffer.size() != pixelCount || pixelCount == 0 ||
+      buffer.empty()) {
+    return;
+  }
+
+  const double edgeThreshold = traceUI
+                                   ? std::clamp(traceUI->getCelEdgeThreshold(),
+                                                0.0, 1.0)
+                                   : 0.20;
+  const int edgeThickness =
+      traceUI ? std::max(1, traceUI->getCelEdgeThickness()) : 1;
+  constexpr double kDepthEps = 1e-6;
+
+  std::vector<uint8_t> edgeMask(pixelCount, 0);
+
+  for (int y = 0; y < buffer_height; ++y) {
+    for (int x = 0; x < buffer_width; ++x) {
+      const size_t idx = static_cast<size_t>(x + y * buffer_width);
+      const PrimaryHitInfo &center = primaryHitBuffer[idx];
+      bool isEdge = false;
+
+      for (int dy = -1; dy <= 1 && !isEdge; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          if (dx == 0 && dy == 0) {
+            continue;
+          }
+          const int nx = x + dx;
+          const int ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= buffer_width || ny >= buffer_height) {
+            continue;
+          }
+
+          const size_t nIdx = static_cast<size_t>(nx + ny * buffer_width);
+          const PrimaryHitInfo &neighbor = primaryHitBuffer[nIdx];
+
+          if (center.hit != neighbor.hit) {
+            isEdge = true;
+            break;
+          }
+
+          if (!center.hit || !neighbor.hit) {
+            continue;
+          }
+
+          if (center.object != neighbor.object) {
+            isEdge = true;
+            break;
+          }
+
+          const double minDepth = std::max(std::min(center.t, neighbor.t), kDepthEps);
+          const double relativeDepthJump =
+              std::abs(center.t - neighbor.t) / minDepth;
+          if (relativeDepthJump > edgeThreshold) {
+            isEdge = true;
+            break;
+          }
+
+          const double normalDot =
+              std::clamp(glm::dot(center.normal, neighbor.normal), -1.0, 1.0);
+          const double normalDiscontinuity = 1.0 - std::abs(normalDot);
+          if (normalDiscontinuity > edgeThreshold) {
+            isEdge = true;
+            break;
+          }
+        }
+      }
+
+      edgeMask[idx] = isEdge ? 1 : 0;
+    }
+  }
+
+  if (edgeThickness > 1) {
+    const int radius = edgeThickness - 1;
+    std::vector<uint8_t> dilated = edgeMask;
+    for (int y = 0; y < buffer_height; ++y) {
+      for (int x = 0; x < buffer_width; ++x) {
+        const size_t idx = static_cast<size_t>(x + y * buffer_width);
+        if (edgeMask[idx] == 0) {
+          continue;
+        }
+        for (int dy = -radius; dy <= radius; ++dy) {
+          for (int dx = -radius; dx <= radius; ++dx) {
+            const int nx = x + dx;
+            const int ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= buffer_width || ny >= buffer_height) {
+              continue;
+            }
+            dilated[static_cast<size_t>(nx + ny * buffer_width)] = 1;
+          }
+        }
+      }
+    }
+    edgeMask.swap(dilated);
+  }
+
+  if (threads > 0) {
+    omp_set_num_threads(threads);
+  }
+#pragma omp parallel for schedule(dynamic, 256)
+  for (int idx = 0; idx < static_cast<int>(pixelCount); ++idx) {
+    if (edgeMask[static_cast<size_t>(idx)] == 0) {
+      continue;
+    }
+    unsigned char *pixel = buffer.data() + static_cast<size_t>(idx) * 3;
+    pixel[0] = 0;
+    pixel[1] = 0;
+    pixel[2] = 0;
+  }
+}
+
+void RayTracer::applyCelPostProcess() {
+  if (!traceUI || !traceUI->getCel()) {
+    return;
+  }
+  if (traceUI->tracerMode() == TraceUI::TracerMode::Path) {
+    return;
+  }
+  if (buffer_width <= 0 || buffer_height <= 0 || buffer.empty()) {
+    return;
+  }
+
+  buildPrimaryHitBuffer();
+  applyCelOutlineFromPrimaryHits();
 }
 
 int RayTracer::aaImage() {

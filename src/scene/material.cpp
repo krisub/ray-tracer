@@ -65,6 +65,77 @@ inline double geometrySmith(double NdotV, double NdotL, double alpha) {
 
 } // namespace microfacet
 
+namespace celshade {
+
+inline glm::dvec3 rgbToHsl(const glm::dvec3 &rgbIn) {
+  glm::dvec3 rgb = glm::clamp(rgbIn, 0.0, 1.0);
+  double maxC = std::max({rgb.x, rgb.y, rgb.z});
+  double minC = std::min({rgb.x, rgb.y, rgb.z});
+  double delta = maxC - minC;
+
+  double h = 0.0;
+  double s = 0.0;
+  double l = 0.5 * (maxC + minC);
+
+  if (delta > 1e-12) {
+    double denom = 1.0 - std::abs(2.0 * l - 1.0);
+    s = (denom > 1e-12) ? (delta / denom) : 0.0;
+    if (maxC == rgb.x) {
+      h = std::fmod((rgb.y - rgb.z) / delta, 6.0);
+    } else if (maxC == rgb.y) {
+      h = ((rgb.z - rgb.x) / delta) + 2.0;
+    } else {
+      h = ((rgb.x - rgb.y) / delta) + 4.0;
+    }
+    h /= 6.0;
+    if (h < 0.0) {
+      h += 1.0;
+    }
+  }
+
+  return glm::dvec3(h, s, l);
+}
+
+inline double hueToRgb(double p, double q, double t) {
+  if (t < 0.0)
+    t += 1.0;
+  if (t > 1.0)
+    t -= 1.0;
+  if (t < (1.0 / 6.0))
+    return p + (q - p) * 6.0 * t;
+  if (t < 0.5)
+    return q;
+  if (t < (2.0 / 3.0))
+    return p + (q - p) * ((2.0 / 3.0) - t) * 6.0;
+  return p;
+}
+
+inline glm::dvec3 hslToRgb(const glm::dvec3 &hslIn) {
+  double h = hslIn.x;
+  double s = glm::clamp(hslIn.y, 0.0, 1.0);
+  double l = glm::clamp(hslIn.z, 0.0, 1.0);
+
+  if (s <= 1e-12) {
+    return glm::dvec3(l, l, l);
+  }
+
+  double q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
+  double p = 2.0 * l - q;
+
+  return glm::dvec3(hueToRgb(p, q, h + 1.0 / 3.0), hueToRgb(p, q, h),
+                    hueToRgb(p, q, h - 1.0 / 3.0));
+}
+
+inline glm::dvec3 quantizeLightness(const glm::dvec3 &rgbIn, int bins) {
+  const int safeBins = std::max(1, bins);
+  glm::dvec3 hsl = rgbToHsl(rgbIn);
+  hsl.z = std::ceil(hsl.z * safeBins) / static_cast<double>(safeBins);
+  hsl.z = glm::clamp(hsl.z, 0.0, 1.0);
+  return hslToRgb(hsl);
+}
+
+} // namespace celshade
+
 /*
 get Emissive component (self-glowing light)
 glm::dvec3 ke(const isect &i) const { return _ke.value(i); }
@@ -478,6 +549,11 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
         scene->causticGatherCount);
 
     color += kd(iTex) * causticIrradiance;
+  }
+
+  if (traceUI && traceUI->getCel() &&
+      traceUI->tracerMode() != TraceUI::TracerMode::Path) {
+    color = celshade::quantizeLightness(color, traceUI->getCelBins());
   }
 
   return color;

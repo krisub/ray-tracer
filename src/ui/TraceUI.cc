@@ -92,9 +92,24 @@ void TraceUI::loadFromJson(const char *file) {
   load(json, "caustic_photons", m_causticPhotons);
   load(json, "caustic_radius", m_causticRadius);
   load(json, "caustic_gather", m_causticGather);
+  const bool hasCelBins = json.find("cel_bins") != json.end();
+  const bool hasCelEdgeThreshold =
+      json.find("cel_edge_threshold") != json.end();
+  const bool hasCelEdgeThickness =
+      json.find("cel_edge_thickness") != json.end();
+  load(json, "cel", m_cel);
+  load(json, "cel_bins", m_celBins);
+  load(json, "cel_edge_threshold", m_celEdgeThreshold);
+  load(json, "cel_edge_thickness", m_celEdgeThickness);
+  if (hasCelBins || hasCelEdgeThreshold || hasCelEdgeThickness) {
+    m_cel = true;
+  }
   m_causticPhotons = std::max(0, m_causticPhotons);
   m_causticGather = std::max(1, m_causticGather);
   if (m_causticRadius < 1e-6) m_causticRadius = 0.5;
+  m_celBins = std::max(1, m_celBins);
+  m_celEdgeThreshold = std::clamp(m_celEdgeThreshold, 0.0, 1.0);
+  m_celEdgeThickness = std::max(1, m_celEdgeThickness);
   const std::string accelMode = json.value("accel_mode", std::string("binary"));
   const std::string tlasAccelMode =
       json.value("tlas_accel_mode", accelMode);

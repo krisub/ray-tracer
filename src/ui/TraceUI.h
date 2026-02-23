@@ -81,6 +81,10 @@ public:
   double getCausticRadius() const { return m_causticRadius; }
   int getCausticGather() const { return m_causticGather; }
   bool getFresnel() const { return m_fresnel; }
+  bool getCel() const { return m_cel; }
+  int getCelBins() const { return m_celBins; }
+  double getCelEdgeThreshold() const { return m_celEdgeThreshold; }
+  int getCelEdgeThickness() const { return m_celEdgeThickness; }
 
   // ray counter
   static void addRays(int number, int ctr) {
@@ -175,6 +179,10 @@ protected:
   double m_causticRadius = 0.5;    // search radius for caustic photon gathering
   int m_causticGather = 100;       // max photons to gather per shading point
   bool m_fresnel = false;           // Cook-Torrance microfacet BRDF with Fresnel
+  bool m_cel = false;               // cel shading mode toggle
+  int m_celBins = 6;                // number of cel lightness bins
+  double m_celEdgeThreshold = 0.20; // edge sensitivity for cel outlines
+  int m_celEdgeThickness = 1;       // outline thickness in pixels
 
   std::unique_ptr<CubeMap> cubemap;
 

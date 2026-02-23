@@ -55,6 +55,7 @@ public:
   int aaNeuralImage();
   bool checkRender();
   void waitRender();
+  void applyCelPostProcess();
 
   void traceSetup(int w, int h);
 
@@ -70,7 +71,16 @@ public:
   std::atomic<bool> stopTrace{false};
 
 private:
+  struct PrimaryHitInfo {
+    bool hit = false;
+    double t = 0.0;
+    glm::dvec3 normal{0.0, 0.0, 0.0};
+    const SceneObject *object = nullptr;
+  };
+
   void renderCurrentScene(int w, int h);
+  void buildPrimaryHitBuffer();
+  void applyCelOutlineFromPrimaryHits();
   glm::dvec3 trace(double x, double y);
   glm::dvec3 computeReflectionDirection(const glm::dvec3 &incidentDir,
                                         const glm::dvec3 &surfaceNormal);
@@ -198,5 +208,6 @@ private:
   bool skipNextPostAAPass = false; // motion-blur path integrated AA already applied
 
   std::vector<unsigned char> aaVisBuffer;
+  std::vector<PrimaryHitInfo> primaryHitBuffer;
 };
 #endif // __RAYTRACER_H__
