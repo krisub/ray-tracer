@@ -403,6 +403,10 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
           ? (D * G / denom) * F * pLight->getColor() * NdotL
           : glm::dvec3(0.0);
 
+      double grazing = std::pow(std::max(0.0, 1.0 - NdotV), 2.0);
+      double rimBoost = 1.0 + 4.0 * grazing;
+      specular *= rimBoost;
+
       glm::dvec3 kD_factor = (glm::dvec3(1.0) - F) * (1.0 - _metallic);
       // metals: add a small diffuse tinted by metallic color to prevent
       // pure black body when there is no environment map for reflections

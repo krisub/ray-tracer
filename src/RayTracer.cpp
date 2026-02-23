@@ -23,7 +23,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
 #include <glm/gtc/noise.hpp>
-#include <string.h> // for memset
+#include <string.h>
 
 #include <fstream>
 #include <iostream>
@@ -37,6 +37,44 @@
 
 using namespace std;
 extern TraceUI *traceUI;
+
+namespace {
+
+inline glm::dvec3 schlickFresnel(double cosTheta, const glm::dvec3 &F0) {
+  double clampedCos = glm::clamp(cosTheta, 0.0, 1.0);
+  double t = 1.0 - clampedCos;
+  constexpr double kRecursiveFresnelPower = 5.0;
+  return F0 + (glm::dvec3(1.0) - F0) * std::pow(t, kRecursiveFresnelPower);
+}
+
+inline glm::dvec3 computeF0(const Material &m, const isect &i) {
+  glm::dvec3 ks = glm::clamp(m.ks(i), glm::dvec3(0.0), glm::dvec3(1.0));
+  double metallic = glm::clamp(m.metallic(), 0.0, 1.0);
+  double ksLum = 0.2126 * ks.x + 0.7152 * ks.y + 0.0722 * ks.z;
+  glm::dvec3 dielectricF0(0.02 + 0.12 * ksLum);
+  return glm::mix(dielectricF0, ks, metallic);
+}
+
+inline glm::dvec3 recursiveFresnelFactor(const ray &r, const isect &i,
+                                         const Material &m) {
+  glm::dvec3 V = glm::normalize(-r.getDirection());
+  glm::dvec3 N = i.getN();
+  if (glm::dot(N, V) < 0.0) {
+    N = -N;
+  }
+  double cosNV = glm::clamp(glm::dot(N, V), 0.0, 1.0);
+  return schlickFresnel(cosNV, computeF0(m, i));
+}
+
+inline glm::dvec3 recursiveRimWeight(const glm::dvec3 &F,
+                                     const glm::dvec3 &F0) {
+  glm::dvec3 denom =
+      glm::max(glm::dvec3(1e-6), glm::dvec3(1.0) - glm::clamp(F0, glm::dvec3(0.0), glm::dvec3(1.0)));
+  glm::dvec3 rim = glm::clamp((F - F0) / denom, glm::dvec3(0.0), glm::dvec3(1.0));
+  return glm::pow(rim, glm::dvec3(1.6));
+}
+
+} // namespace
 
 // Use this variable to decide if you want to print out debugging messages. Gets
 // set in the "trace single ray" mode in TraceGLWindow, for example.
@@ -347,11 +385,26 @@ RayTracer::traceRayOverlap(ray &r, const glm::dvec3 &thresh, int depth,
     const Material &m = i.getMaterial();
     colorC = m.shade(scene.get(), r, i);
 
-    glm::dvec3 Kr = m.kr(i);
-    accumulateReflectionOverlap(r, i, Kr, thresh, depth, colorC, objStack);
-
-    glm::dvec3 Kt = m.kt(i);
-    accumulateRefractionOverlap(r, i, m, Kt, thresh, depth, colorC, objStack);
+    glm::dvec3 KrEff = m.kr(i);
+    glm::dvec3 KtEff = m.kt(i);
+    if (traceUI && traceUI->getFresnel()) {
+      // Fresnel-rim coupling for recursive reflection/refraction when --fresnel is enabled.
+      glm::dvec3 F0 = computeF0(m, i);
+      glm::dvec3 F = recursiveFresnelFactor(r, i, m);
+      glm::dvec3 rimW = recursiveRimWeight(F, F0);
+      glm::dvec3 oneMinusF =
+          glm::clamp(glm::dvec3(1.0) - F, glm::dvec3(0.0), glm::dvec3(1.0));
+      // Keep baseline Kr reflectance and add Fresnel rim boost on top.
+      // This avoids the "fresnel is less reflective than baseline" issue.
+      glm::dvec3 baseKr = glm::clamp(KrEff, glm::dvec3(0.0), glm::dvec3(1.0));
+      constexpr double kRimBoost = 1.0;
+      KrEff = glm::clamp(
+          baseKr + (glm::dvec3(1.0) - baseKr) * (kRimBoost * rimW),
+          glm::dvec3(0.0), glm::dvec3(1.0));
+      KtEff *= oneMinusF;
+    }
+    accumulateReflectionOverlap(r, i, KrEff, thresh, depth, colorC, objStack);
+    accumulateRefractionOverlap(r, i, m, KtEff, thresh, depth, colorC, objStack);
 
   } else {
     t = 0.0;
@@ -1146,11 +1199,26 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         colorC += giIntensity * indirectColor;
       }
 
-      glm::dvec3 Kr = m.kr(i);
-      accumulateReflection(r, i, Kr, thresh, depth, colorC);
-
-      glm::dvec3 Kt = m.kt(i);
-      accumulateRefraction(r, i, m, Kt, thresh, depth, colorC);
+      glm::dvec3 KrEff = m.kr(i);
+      glm::dvec3 KtEff = m.kt(i);
+      if (traceUI && traceUI->getFresnel()) {
+        // Fresnel-rim coupling for recursive reflection/refraction when --fresnel is enabled.
+        glm::dvec3 F0 = computeF0(m, i);
+        glm::dvec3 F = recursiveFresnelFactor(r, i, m);
+        glm::dvec3 rimW = recursiveRimWeight(F, F0);
+        glm::dvec3 oneMinusF =
+            glm::clamp(glm::dvec3(1.0) - F, glm::dvec3(0.0), glm::dvec3(1.0));
+        // Keep baseline Kr reflectance and add Fresnel rim boost on top.
+        // This avoids the "fresnel is less reflective than baseline" issue.
+        glm::dvec3 baseKr = glm::clamp(KrEff, glm::dvec3(0.0), glm::dvec3(1.0));
+        constexpr double kRimBoost = 1.0;
+        KrEff = glm::clamp(
+            baseKr + (glm::dvec3(1.0) - baseKr) * (kRimBoost * rimW),
+            glm::dvec3(0.0), glm::dvec3(1.0));
+        KtEff *= oneMinusF;
+      }
+      accumulateReflection(r, i, KrEff, thresh, depth, colorC);
+      accumulateRefraction(r, i, m, KtEff, thresh, depth, colorC);
     }
 
   } else {
