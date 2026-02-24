@@ -254,8 +254,10 @@ This feature is invoked via the command line flag `--goop`:
 Here are the scenes rendered from the above commands:
 Emissive pink sphere, casts a pink shadow:
 ![emissive sphere](./ecm2/extra_credit_output/goop/emissive_sphere.png)
+
 Emissive green sphere, casts a green shadow:
 ![emissive sphere 2](./ecm2/extra_credit_output/goop/goop_look.png)
+
 Emissive green sphere, causes a green specular highlight on another object:
 ![emissive sphere 3](./ecm2/extra_credit_output/goop/goop_shad.png)
 ### Normal Mapping
@@ -267,7 +269,9 @@ Implemented in the shade function by perturbing the geometric surface normal bef
 ```
 Here are the montages comparing my normal mapping to the reference solution for the above scenes!
 The reference solution does not support mapping spheres, it seems:
+
 ![brick sphere](./ecm2/extra_credit_mtgs/normal_brick_sphere.mtg.png)
+
 ![stone box](./ecm2/extra_credit_mtgs/normal_stone_box.mtg.png)
 ### Portals
 Portals are implemented as paired `SceneObject`s (discs) that interrupt the standard ray tracing path. In the primary ray tracing loop (specifically within `intersectPortalAware` or `traceRay`), if a ray intersects a `Portal` object, I bypass standard material shading and instead calculate a "teleportation" step. I compute an exit ray by mapping the intersection point and the incident direction from the entry portal's local coordinate system to the linked partner portal's coordinate system using their transformation matrices. A new recursive trace call is then launched from this exit point with the transformed direction, allowing the ray to continue traversing the scene from the partner's location. To prevent infinite loops (ex., parallel mirrors), I enforce a hard limit on the number of portal traversals (`maxPortalHops`) per ray. Portals are invoked exclusively via the scene json file using the `"portal_pair"` key. This key requires an array containing exactly two objects, where each object defines one end of the portal system (specifying properties like `"radius"` and `"transform"`). 
@@ -277,7 +281,9 @@ Portals are implemented as paired `SceneObject`s (discs) that interrupt the stan
 ./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/portals/portal_test.json ./ecm2/extra_credit_output/portals/ptest.png
 ```
 Here are the scenes rendered from the above commands (I render with a cubemap to show the dragon more clearly):
+
 ![pdrag4](./ecm2/extra_credit_output/portals/pdrag4.png)
+
 ![ptest](./ecm2/extra_credit_output/portals/ptest.png)
 ### Solid Volumetric Textures (Procedural Texture Mapping)
 I implemented procedural texture mapping using a Reaction-Diffusion system (specifically the Gray-Scott model), which generates organic patterns like spots and stripes dynamically rather than relying on static image files. This is handled by a dedicated texture class that simulates the interaction of two chemical concentrations on a 2D grid over a series of time steps; the resulting concentration map is then sampled using standard UV coordinates during the shading process. This feature is invoked exclusively via the scene json file within a material definition. Instead of using a `"mapped"` image path, you define a `"reaction_diffusion"` object containing specific generation parameters, including `"pattern"` (ex., "spots"), `"iterations"` (to control simulation time), and `"resolution"` (grid size).
@@ -291,9 +297,13 @@ I implemented procedural texture mapping using a Reaction-Diffusion system (spec
 ./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/reaction_diffusion/wood.json ./ecm2/extra_credit_output/rd/wood.png
 ```
 Here are the scenes rendered from the above commands:
+
 ![marble](./ecm2/extra_credit_output/rd/marble.png)
+
 ![spots](./ecm2/extra_credit_output/rd/spots.png)
+
 ![stripes](./ecm2/extra_credit_output/rd/stripes.png)
+
 ![wood](./ecm2/extra_credit_output/rd/wood.png)
 ### Lipschitz-continuous Implicit Surfaces
 I implemented Lipschitz continuous implicit surfaces using the **Sphere Tracing** (or Ray Marching) algorithm. Within the `ImplicitSurface::intersectLocal` method, I iteratively advance the ray by a safe step size calculated as $∣f(p)∣/L$, where $f(p)$ is the value of the implicit function at the current point and L is the Lipschitz constant (an upper bound on the gradient's magnitude). This ensures the ray converges to the surface zero-crossing without overshooting. I supported various surface types including Spheres, Tori, Goursat Tangles, and Blobs (Metaballs) by defining their specific field functions in `eval()` and their gradient bounds in `lipschitzConstant()`. This feature is invoked via the scene json file by defining a geometry object with the key `"implicit_surface"`. Inside this object, you have to specify the `"type"` (such as `"torus"`, `"goursat"`, or `"blob"`) and the associated parameters for that shape (ex. `"major_radius"`, `"minor_radius"`, or `"lipschitz_constant"`).
@@ -307,9 +317,13 @@ I implemented Lipschitz continuous implicit surfaces using the **Sphere Tracing*
 ./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/implicit_surfaces/torus.json ./ecm2/extra_credit_output/imp_surf/torus.png
 ```
 Here are the scenes rendered from the above commands. I use a cubemap to show the shapes more clearly:
+
 ![blob](./ecm2/extra_credit_output/imp_surf/blob.png)
+
 ![goursat](./ecm2/extra_credit_output/imp_surf/goursat.png)
+
 ![sphere](./ecm2/extra_credit_output/imp_surf/sphere.png)
+
 ![torus](./ecm2/extra_credit_output/imp_surf/torus.png)
 ### Neural Net for Antialiasing (Upsampling)
 I implemented neural network antialiasing by training a deep learning model (utilizing VGG16-based perceptual loss and sobel edge loss) to learn the mapping between aliased and antialiased images, which I then exported to the ONNX format. Within the renderer's `aaNeuralImage` function, I integrated the ONNX Runtime C++ API to load this model (`neural_aa_best.onnx`) and perform inference as a post-processing step; this involves converting the raw pixel buffer into a normalized NCHW float tensor, running the model, and clamping the output back into the image buffer. Invoked via the command line `--neural flag`.
@@ -326,7 +340,9 @@ I implemented animation by creating a dedicated render loop in the command- line
 ```
 The above command will put all frames into a directory (frames, frames2), which you can make into a video using ffmpeg.
 Here are links to the videos I created with my animation:
+
 ![orbiting camera video](./ecm2/extra_credit_output/orbit.mp4)
+
 ![sine wave video](./ecm2/extra_credit_output/sine.mp4)
 #### Trailer
 I animated a bunch of scenes, all of them are produced by my ray tracer (except for the text!). The scenes are: a camera rotating with an obj mesh of sofia the first (found on [sketchfab here](https://sketchfab.com/3d-models/sofia-sofia-the-first-2112c438c1474694a762b51ae40d523a)), a camera panning up to participating media (volumetric ray tracing), zooming in via the camera field of view, a cel/cartoon shaded dragon going through a portal, path traced color changing caustics, and the end scene is just sofia rotating again. Also music is the sofia the first theme song because I made this into a lyric video LOL. I hope you think it's funny :)
@@ -346,10 +362,15 @@ I implemented distributed ray tracing by utilizing Monte Carlo integration to av
 ./build/bin/ray -r 5 --distributed ./ecm2/extra_credit_scenes/global_ill_path/soft_shad.json ./ecm2/extra_credit_output/dist/shadow.png
 ```
 Here are the scenes I rendered with distributed ray tracing. The quality is low because I could not use many samples or it would take a very long time to render. Path tracing is quicker and gets me higher quality images (see below). In these scenes, I showcase depth of field, motion blur, and soft shadows from area lights (I implement area lights as a radius from which I sample many point lights from).
+
 ![cornell](./ecm2/extra_credit_output/dist/cornell.png)
+
 ![dof](./ecm2/extra_credit_output/dist/dof.png)
+
 ![gloss](./ecm2/extra_credit_output/dist/gloss.png)
+
 ![motion](./ecm2/extra_credit_output/dist/motion.png)
+
 ![soft shadows](./ecm2/extra_credit_output/dist/shadow.png)
 ### Path Tracing
 I implemented full path ray tracing using a Monte Carlo integration approach with Next Event Estimation (NEE) to accelerate convergence. In the `RayTracer::tracePathRay` function, I perform an iterative random walk for each pixel sample: at every bounce, I explicitly sample light sources (shadow rays) to calculate direct lighting and then use importance sampling (based on the material's BRDF) to choose a new random direction for the indirect light contribution. To prevent infinite recursion and ensure unbiased termination, I applied Russian Roulette after the third bounce, randomly terminating paths based on their current throughput. Invoked via the `--path` flag and quality can be controlled by specifying samples per pixel with `--spp <n>`.
@@ -365,10 +386,15 @@ I implemented full path ray tracing using a Monte Carlo integration approach wit
 ./build/bin/ray -r 5 --path ./ecm2/extra_credit_scenes/global_ill_path/soft_shad.json ./ecm2/extra_credit_output/path/shadow.png
 ```
 Here are the same scenes from distributed ray tracing rendered with path tracing, you can see the color bleed in the cornell box!
+
 ![cornell](./ecm2/extra_credit_output/path/cornell.png)
+
 ![dof](./ecm2/extra_credit_output/path/dof.png)
+
 ![gloss](./ecm2/extra_credit_output/path/gloss.png)
+
 ![motion](./ecm2/extra_credit_output/path/motion.png)
+
 ![soft shadows](./ecm2/extra_credit_output/path/shadow.png)
 ### Volumetric Ray Tracing
 I implemented solid volumetric textures (procedural 3D noise) by integrating a Fractional Brownian Motion (fBm) noise function directly into the volumetric ray marching loop. Inside the `RayTracer::traceVolumetric` function (specifically within the helper `sampleVolumeDensity`), I sample `glm::perlin` noise based on the ray's current 3D world position rather than 2D UV coordinates. This noise value is accumulated over multiple octaves in `fbmDensity` and used to modulate the local density of the participating medium, allowing for the rendering of heterogeneous solid volumes like smoke, clouds, or uneven fog. It's invoked through the scene json within a material. To enable it, add a `"volume"` object to the material and set the `"noise_scale"` parameter to a value greater than 0. The texture's appearance can be modified via `"noise_octaves"` (integer) and `"noise_gain"` (float) within the same volume block.
@@ -380,8 +406,11 @@ I implemented solid volumetric textures (procedural 3D noise) by integrating a F
 ./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/nebula.json ./ecm2/extra_credit_output/volumetric/nebula.png
 ```
 Here are the scenes rendered from the above commands, although note that these commands do take a while to run! I render with a cubemap to show the media better.
+
 ![fog](./ecm2/extra_credit_output/volumetric/fog.png)
+
 ![orange smoke](./ecm2/extra_credit_output/volumetric/fog.png)
+
 ![nebula](./ecm2/extra_credit_output/volumetric/fog.png)
 ### Advanced Shading
 #### Fresnel Shading with Anisotropy
@@ -400,16 +429,22 @@ I implemented fresnel shading with anisotropy by integrating a Cook-Torrance mic
 ./build/bin/ray -r 8 --fresnel ./ecm2/extra_credit_scenes/adv_shading/anisotropic_cyl.json ./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png
 ```
 Here are the scenes rendered from the above commands. Note that the fresnel rim test case MUST be rendered with a cubemap because the sphere is dark and requires environment light to see the rim.
+
 Sphere without fresnel shading:
 ![no rim](./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png)
+
 Sphere with fresnel shading, you can see the reflective rim:
 ![rim](./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png)
+
 Metallic spheres without fresnel shading:
 ![spheres](./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png)
+
 Metallic spheres with fresnel shading. From left to right, decreasing levels of anisotropy, visible in the spread of the highlight:
 ![spheres](./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png)
+
 Cylinder without fresnel shading:
 ![cyl](./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png)
+
 Cylinder with anisotropy and fresnel shading has a long, stretched highlight:
 ![anisotropic cyl](./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png)
 #### Cel Shading
@@ -418,12 +453,16 @@ I implemented cel shading (cartoon shading) as a post illumination quantization 
 ./build/bin/ray -r 5 --cel ./ecm2/extra_credit_scenes/cone.json ./ecm2/extra_credit_output/cel_cone.png
 ```
 Here are a few montages of using cel shading (I use the above scenes)! I also cel shade the background cubemap here, and I implemented a feature for my animated trailed where obj meshes can be excluded from being cel shaded if specified in the scene json. I only put one command above as an example (because otherwise I have to include given scenes in my tar), but you can run any scene with cel shading, just add the `--cel` flag!
+
 cone:
 ![cone](./ecm2/extra_credit_mtgs/cone.mtg.png)
+
 hitchcock:
 ![hitchock](./ecm2/extra_credit_mtgs/hitchcock.mtg.png)
+
 reflection:
 ![reflection](./ecm2/extra_credit_mtgs/reflection.mtg.png)
+
 hotel:
 ![hotel](./ecm2/extra_credit_mtgs/objmesh_hotel.mtg.png)
 ### Caustics
@@ -436,8 +475,11 @@ I implemented caustics using photon mapping to capture focused light patterns li
 ./build/bin/ray -r 8 --path --caustic-photons 1000000 --caustic-radius 0.5 --caustic-gather 200 ./ecm2/extra_credit_scenes/caustics/metal_ring.json ./ecm2/extra_credit_output/caustics/metal_ring.png
 ```
 Here are my three scenes with caustics, note that these scenes take a long time to run!
+
 ![glass ball](./ecm2/extra_credit_output/caustics/ball.png)
+
 ![glass cone/cup](./ecm2/extra_credit_output/caustics/cone.png)
+
 ![metal ring](./ecm2/extra_credit_output/caustics/metal_ring.png)
 ### Features which take a long time to run
 - volumetric ray tracing with many overlapping transparent media
