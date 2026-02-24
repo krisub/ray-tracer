@@ -2617,6 +2617,7 @@ int RayTracer::aaNeuralImage() {
     skipNextPostAAPass = false;
     return 0;
   }
+  std::cout << "running neural aa!" << std::endl;
   char path[PATH_MAX];
   ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
   std::string exeDir = (count > 0) ? std::string(path, count) : "";

@@ -331,10 +331,27 @@ Here are the scenes rendered from the above commands. I use a cubemap to show th
 ![torus](./ecm2/extra_credit_output/imp_surf/torus.png)
 ### Neural Net for Antialiasing (Upsampling)
 I implemented neural network antialiasing by training a deep learning model (utilizing VGG16-based perceptual loss and sobel edge loss) to learn the mapping between aliased and antialiased images, which I then exported to the ONNX format. Within the renderer's `aaNeuralImage` function, I integrated the ONNX Runtime C++ API to load this model (`neural_aa_best.onnx`) and perform inference as a post-processing step; this involves converting the raw pixel buffer into a normalized NCHW float tensor, running the model, and clamping the output back into the image buffer. Invoked via the command line `--neural flag`.
+
+```bash
+./build/bin/ray -r 5 --neural ./ecm1/extra_credit_scenes/hotel.json ./ecm2/extra_credit_output/neural_aa_hotel.png
 ```
-insert commands here
-```
-Here I compare render time and image quality for large scenes like hotel, dragon, etc.
+
+Here I compare render time and image quality for large scenes like hotel, dragon, etc. I use montages because the reference solution is using fully supersampled anti aliasing (which is the ground truth). Hotel was part of the training set, but dragon 4 was not (they were in the testing set). I also only trained/tested/validated on half of the cubemaps, of which iceriver (used below) was not one of. The full training script is at `./src/nn/train.py`.
+
+Time to render hotel with neural aa: 3.17 seconds
+Time to render reference with fully supersampled aa: 4.62 seconds
+
+Montage (I do not see a visual difference):
+
+![hotel](./ecm2/extra_credit_mtgs/objmesh_hotel_neural.mtg.png)
+
+Time to render scenes 2, dragon 4 with neural aa: 1.81 seconds
+Time to render reference with fully supersampled aa: 1.97 seconds
+
+Montage (there is a visual difference in that mine is darker, but I think this is also because of design decisions in my ray tracer):
+
+![trimesh dragon 4](./ecm2/extra_credit_mtgs/trimesh_dragon4.mtg.png)
+
 ### Animation
 I implemented animation by creating a dedicated render loop in the command- line interface that dynamically modifies the scene's json definition for every frame before rendering. Inside `CommandLineUI::runAnimation`, I calculate a current time value t (interpolated between the start and end times) and pass the raw JSON object to a `substituteExpressions` function. This function recursively traverses the JSON tree, identifying string values that represent mathematical expressions (containing variables like t) and evaluates them to produce concrete numeric values for that specific frame. This feature is invoked via the command line using the arguments `--animation <N>` (to set the number of frames), `--t-start <val>`, and `--t-end <val>`, while the scene json itself must use expression strings (e.g., `"rotate": [[0,1,0], "360*t"]`) instead of static numbers for any properties that should change over time.
 ```bash
