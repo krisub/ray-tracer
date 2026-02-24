@@ -252,13 +252,17 @@ This feature is invoked via the command line flag `--goop`:
 ./build/bin/ray -r 5 --goop ./ecm2/extra_credit_scenes/goop/goop_shadow_emission.json ./ecm2/extra_credit_output/goop/goop_shad.png
 ```
 Here are the scenes rendered from the above commands:
+
 Emissive pink sphere, casts a pink shadow:
+
 ![emissive sphere](./ecm2/extra_credit_output/goop/emissive_sphere.png)
 
 Emissive green sphere, casts a green shadow:
+
 ![emissive sphere 2](./ecm2/extra_credit_output/goop/goop_look.png)
 
 Emissive green sphere, causes a green specular highlight on another object:
+
 ![emissive sphere 3](./ecm2/extra_credit_output/goop/goop_shad.png)
 ### Normal Mapping
 Implemented in the shade function by perturbing the geometric surface normal before lighting calculations. I sample the assigned normal map texture at the current UV coordinates and decodes the RGB color values from the [0,1] range into [−1,1] vector components (XYZ). The X and Y (tangent and bitangent) components are scaled by a `_normalMapStrength` factor to control the bump intensity. A Tangent-Bitangent-Normal (TBN) matrix is constructed using the surface's geometric normal and its partial derivative `dPdu` (with a fallback for degenerate cases like sphere poles). The sampled tangent-space normal is transformed into world space using this basis. Finally, to prevent visible discontinuities at texture edges, the code blends the perturbed normal back toward the geometric normal when UV coordinates are near seams. To invoke: the feature must be enabled via the command line flag `--normal` AND the scene json file must specific a `"normal_map"` key pointing to a texture image path inside a material block.
@@ -431,22 +435,28 @@ I implemented fresnel shading with anisotropy by integrating a Cook-Torrance mic
 Here are the scenes rendered from the above commands. Note that the fresnel rim test case MUST be rendered with a cubemap because the sphere is dark and requires environment light to see the rim.
 
 Sphere without fresnel shading:
-[no rim](./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png)
+
+![no rim](./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png)
 
 Sphere with fresnel shading, you can see the reflective rim:
-[rim](./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png)
+
+![rim](./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png)
 
 Metallic spheres without fresnel shading:
-[spheres](./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png)
+
+![spheres](./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png)
 
 Metallic spheres with fresnel shading. From left to right, decreasing levels of anisotropy, visible in the spread of the highlight:
-[spheres](./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png)
+
+![spheres](./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png)
 
 Cylinder without fresnel shading:
-[cyl](./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png)
+
+![cyl](./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png)
 
 Cylinder with anisotropy and fresnel shading has a long, stretched highlight:
-[anisotropic cyl](./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png)
+
+![anisotropic cyl](./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png)
 #### Cel Shading
 I implemented cel shading (cartoon shading) as a post illumination quantization step at the end of the `Material::shade` function. After calculating the standard Phong color (emissive + ambient + diffuse + specular), I convert the result from RGB to the HSL (Hue, Saturation, Lightness) color space. I then discretize the lightness component into a set number of steps ("bins") using the formula `ceil(L * bins) / bins`, which snaps smooth gradients into flat bands of color, before converting the value back to RGB. Invoke via the `--cel` flag.
 ```bash
