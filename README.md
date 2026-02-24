@@ -217,7 +217,7 @@ a_credit_scenes/animation/anim_portal_dragon1.json frames/out.png
 # To combine the frames into a video I used ffmpeg.
 ffmpeg -framerate 30 -i frames/out_%04d.png -c:v libx264 -crf 0 -pix_fmt yuv444p ./ecm2/extra_credit_output/anim_portal_dragon1.mp4
 ```
-I rendered the animation with a cubemap, but since I do not include cubemaps in my tar file I do not include it in the above command. Here is the video of my creative scene: [click to watch](./ecm2/extra_credit_output/anim_portal_dragon1.mp4).
+I rendered the animation with a cubemap, but since I do not include cubemaps in my tar file I do not include it in the above command. Here is the video of my creative scene! ![click to watch](./ecm2/extra_credit_output/anim_portal_dragon1.mp4)
 ### Adaptive Ray Termination
 Adaptive ray termination is implemented in recursive ray tracing; instead of tracing a reflection or refraction ray unconditionally, I check the material's coefficient (reflectivity or transmissivity) is below the given threshold. If so, the recursion for that specific branch is terminated early. To invoke a threshold, the settings json must include the key "ray_term_threshold". Ex. to set a threshold of 0.2 (terminating rays if reflection/transmission is less than 20%):
 ```json
@@ -245,35 +245,72 @@ $$\text{IntegratedColor} = \int_0^t L_e \cdot k_t^{(t-s)} \, ds = L_e \frac{k_t^
 This effect is also applied to shadow rays, meaning these objects cast glowing shadows (colored light) onto other surfaces.
 This feature is invoked via the command line flag `--goop`:
 ```
-insert commands here
+./build/bin/ray -r 5 --goop ./ecm2/extra_credit_scenes/goop/emissive_sphere.json ./ecm2/extra_credit_output/goop/emissive_sphere.png
+
+./build/bin/ray -r 5 --goop ./ecm2/extra_credit_scenes/goop/goop_lookthrough.json ./ecm2/extra_credit_output/goop/goop_look.png
+
+./build/bin/ray -r 5 --goop ./ecm2/extra_credit_scenes/goop/goop_shadow_emission.json ./ecm2/extra_credit_output/goop/goop_shad.png
 ```
 Here are the scenes rendered from the above commands:
-SCENES
+Emissive pink sphere, casts a pink shadow:
+![emissive sphere](./ecm2/extra_credit_output/goop/emissive_sphere.png)
+Emissive green sphere, casts a green shadow:
+![emissive sphere 2](./ecm2/extra_credit_output/goop/goop_look.png)
+Emissive green sphere, causes a green specular highlight on another object:
+![emissive sphere 3](./ecm2/extra_credit_output/goop/goop_shad.png)
 ### Normal Mapping
 Implemented in the shade function by perturbing the geometric surface normal before lighting calculations. I sample the assigned normal map texture at the current UV coordinates and decodes the RGB color values from the [0,1] range into [−1,1] vector components (XYZ). The X and Y (tangent and bitangent) components are scaled by a `_normalMapStrength` factor to control the bump intensity. A Tangent-Bitangent-Normal (TBN) matrix is constructed using the surface's geometric normal and its partial derivative `dPdu` (with a fallback for degenerate cases like sphere poles). The sampled tangent-space normal is transformed into world space using this basis. Finally, to prevent visible discontinuities at texture edges, the code blends the perturbed normal back toward the geometric normal when UV coordinates are near seams. To invoke: the feature must be enabled via the command line flag `--normal` AND the scene json file must specific a `"normal_map"` key pointing to a texture image path inside a material block.
+```bash
+./build/bin/ray -r 5 --normal ./ecm2/extra_credit_scenes/normal_map/normal_brick_sphere.json ./ecm2/extra_credit_output/normal_brick_sphere.png
+
+./build/bin/ray -r 5 --normal ./ecm2/extra_credit_scenes/normal_map/normal_stone_box.json ./ecm2/extra_credit_output/normal_stone_box.png
 ```
-insert commands here
-```
-Here are the scenes rendered from the above commands:
-SCENES
+Here are the montages comparing my normal mapping to the reference solution for the above scenes!
+The reference solution does not support mapping spheres, it seems:
+![brick sphere](./ecm2/extra_credit_mtgs/normal_brick_sphere.mtg.png)
+![stone box](./ecm2/extra_credit_mtgs/normal_stone_box.mtg.png)
 ### Portals
 Portals are implemented as paired `SceneObject`s (discs) that interrupt the standard ray tracing path. In the primary ray tracing loop (specifically within `intersectPortalAware` or `traceRay`), if a ray intersects a `Portal` object, I bypass standard material shading and instead calculate a "teleportation" step. I compute an exit ray by mapping the intersection point and the incident direction from the entry portal's local coordinate system to the linked partner portal's coordinate system using their transformation matrices. A new recursive trace call is then launched from this exit point with the transformed direction, allowing the ray to continue traversing the scene from the partner's location. To prevent infinite loops (ex., parallel mirrors), I enforce a hard limit on the number of portal traversals (`maxPortalHops`) per ray. Portals are invoked exclusively via the scene json file using the `"portal_pair"` key. This key requires an array containing exactly two objects, where each object defines one end of the portal system (specifying properties like `"radius"` and `"transform"`). 
+```bash
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/portals/portal_dragon4.json ./ecm2/extra_credit_output/portals/pdrag4.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/portals/portal_test.json ./ecm2/extra_credit_output/portals/ptest.png
 ```
-insert commands here
-```
-Here are the scenes rendered from the above commands:
+Here are the scenes rendered from the above commands (I render with a cubemap to show the dragon more clearly):
+![pdrag4](./ecm2/extra_credit_output/portals/pdrag4.png)
+![ptest](./ecm2/extra_credit_output/portals/ptest.png)
 ### Solid Volumetric Textures (Procedural Texture Mapping)
 I implemented procedural texture mapping using a Reaction-Diffusion system (specifically the Gray-Scott model), which generates organic patterns like spots and stripes dynamically rather than relying on static image files. This is handled by a dedicated texture class that simulates the interaction of two chemical concentrations on a 2D grid over a series of time steps; the resulting concentration map is then sampled using standard UV coordinates during the shading process. This feature is invoked exclusively via the scene json file within a material definition. Instead of using a `"mapped"` image path, you define a `"reaction_diffusion"` object containing specific generation parameters, including `"pattern"` (ex., "spots"), `"iterations"` (to control simulation time), and `"resolution"` (grid size).
-```
-insert commands here
+```bash
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/reaction_diffusion/marble.json ./ecm2/extra_credit_output/rd/marble.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/reaction_diffusion/spots.json ./ecm2/extra_credit_output/rd/spots.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/reaction_diffusion/stripes.json ./ecm2/extra_credit_output/rd/stripes.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/reaction_diffusion/wood.json ./ecm2/extra_credit_output/rd/wood.png
 ```
 Here are the scenes rendered from the above commands:
+![marble](./ecm2/extra_credit_output/rd/marble.png)
+![spots](./ecm2/extra_credit_output/rd/spots.png)
+![stripes](./ecm2/extra_credit_output/rd/stripes.png)
+![wood](./ecm2/extra_credit_output/rd/wood.png)
 ### Lipschitz-continuous Implicit Surfaces
 I implemented Lipschitz continuous implicit surfaces using the **Sphere Tracing** (or Ray Marching) algorithm. Within the `ImplicitSurface::intersectLocal` method, I iteratively advance the ray by a safe step size calculated as $∣f(p)∣/L$, where $f(p)$ is the value of the implicit function at the current point and L is the Lipschitz constant (an upper bound on the gradient's magnitude). This ensures the ray converges to the surface zero-crossing without overshooting. I supported various surface types including Spheres, Tori, Goursat Tangles, and Blobs (Metaballs) by defining their specific field functions in `eval()` and their gradient bounds in `lipschitzConstant()`. This feature is invoked via the scene json file by defining a geometry object with the key `"implicit_surface"`. Inside this object, you have to specify the `"type"` (such as `"torus"`, `"goursat"`, or `"blob"`) and the associated parameters for that shape (ex. `"major_radius"`, `"minor_radius"`, or `"lipschitz_constant"`).
-```
-insert commands here
+```bash
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/implicit_surfaces/blob.json ./ecm2/extra_credit_output/imp_surf/blob.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/implicit_surfaces/goursat.json ./ecm2/extra_credit_output/imp_surf/goursat.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/implicit_surfaces/sphere.json ./ecm2/extra_credit_output/imp_surf/sphere.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/implicit_surfaces/torus.json ./ecm2/extra_credit_output/imp_surf/torus.png
 ```
 Here are the scenes rendered from the above commands. I use a cubemap to show the shapes more clearly:
+![blob](./ecm2/extra_credit_output/imp_surf/blob.png)
+![goursat](./ecm2/extra_credit_output/imp_surf/goursat.png)
+![sphere](./ecm2/extra_credit_output/imp_surf/sphere.png)
+![torus](./ecm2/extra_credit_output/imp_surf/torus.png)
 ### Neural Net for Antialiasing (Upsampling)
 I implemented neural network antialiasing by training a deep learning model (utilizing VGG16-based perceptual loss and sobel edge loss) to learn the mapping between aliased and antialiased images, which I then exported to the ONNX format. Within the renderer's `aaNeuralImage` function, I integrated the ONNX Runtime C++ API to load this model (`neural_aa_best.onnx`) and perform inference as a post-processing step; this involves converting the raw pixel buffer into a normalized NCHW float tensor, running the model, and clamping the output back into the image buffer. Invoked via the command line `--neural flag`.
 ```
@@ -281,51 +318,127 @@ insert commands here
 ```
 Here I compare render time and image quality for large scenes like hotel, dragon, etc.
 ### Animation
-I implemented animation by creating a dedicated render loop in the command- line interface that dynamically modifies the scene's json definition for every frame before rendering. Inside `CommandLineUI::runAnimation`, I calculate a current time value t (interpolated between the start and end times) and pass the raw JSON object to a `substituteExpressions` function. This function recursively traverses the JSON tree, identifying string values that represent mathematical expressions (containing variables like t) and evaluates them to produce concrete numeric values for that specific frame. This feature is invoked via the command line using the arguments `--animation <N>` (to set the number of frames), `--t-start <val>`, and `--t-end <val>`, while the scene JSON itself must use expression strings (e.g., `"rotate": [[0,1,0], "360*t"]`) instead of static numbers for any properties that should change over time.
+I implemented animation by creating a dedicated render loop in the command- line interface that dynamically modifies the scene's json definition for every frame before rendering. Inside `CommandLineUI::runAnimation`, I calculate a current time value t (interpolated between the start and end times) and pass the raw JSON object to a `substituteExpressions` function. This function recursively traverses the JSON tree, identifying string values that represent mathematical expressions (containing variables like t) and evaluates them to produce concrete numeric values for that specific frame. This feature is invoked via the command line using the arguments `--animation <N>` (to set the number of frames), `--t-start <val>`, and `--t-end <val>`, while the scene json itself must use expression strings (e.g., `"rotate": [[0,1,0], "360*t"]`) instead of static numbers for any properties that should change over time.
+```bash
+./build/bin/ray -r 5 --animation 24 --t-start 0 --t-end 6.28318 ./ecm2/extra_credit_scenes/animation/orbiting_camera.json ./ecm2/extra_credit_output/frames/orbit.png
+
+./build/bin/ray -r 5 --animation 24 --t-start 0 --t-end 6.28318 ./ecm2/extra_credit_scenes/animation/sine_wave.json ./ecm2/extra_credit_output/frames2/sine.png
 ```
-insert commands here
-```
+The above command will put all frames into a directory (frames, frames2), which you can make into a video using ffmpeg.
 Here are links to the videos I created with my animation:
+![orbiting camera video](./ecm2/extra_credit_output/orbit.mp4)
+![sine wave video](./ecm2/extra_credit_output/sine.mp4)
 #### Trailer
-Here is a link to my ray tracer trailer :)
+I animated a bunch of scenes, all of them are produced by my ray tracer (except for the text!). The scenes are: a camera rotating with an obj mesh of sofia the first (found on [sketchfab here](https://sketchfab.com/3d-models/sofia-sofia-the-first-2112c438c1474694a762b51ae40d523a)), a camera panning up to participating media (volumetric ray tracing), zooming in via the camera field of view, a cel/cartoon shaded dragon going through a portal, path traced color changing caustics, and the end scene is just sofia rotating again. Also music is the sofia the first theme song because I made this into a lyric video LOL. I hope you think it's funny :)
+
+link to ray tracing trailer on youtube:
 ### Distributed Ray Tracing
 I implemented distributed ray tracing by utilizing Monte Carlo integration to average multiple stochastic samples, allowing for effects like global illumination, depth of field, and motion blur. Specifically, I added the `computeIndirectIllumination` function in `RayTracer.cpp`, which casts cosine-weighted rays over a hemisphere to capture diffuse color bleeding and specular inter-reflections. Additionally, I modified the primary ray generation logic to average samples taken from a lens aperture (for depth of field) and accumulated pixel colors across different time steps (for motion blur). Invoked via the command line using the flag `--distributed` or by setting the key `"tracer"` to `"distributed"` in the settings JSON file. There are other parameters like `"global_illumination_samples"` in the settings json or camera properties like `"f_number"` and `"shutter_open"` within the scene json file.
-```
-insert commands here
+```bash
+./build/bin/ray -r 5 --distributed ./ecm2/extra_credit_scenes/global_ill_path/cornell.json ./ecm2/extra_credit_output/dist/cornell.png
+
+./build/bin/ray -r 5 --distributed ./ecm2/extra_credit_scenes/global_ill_path/dof.json ./ecm2/extra_credit_output/dist/dof.png
+
+./build/bin/ray -r 5 --distributed ./ecm2/extra_credit_scenes/global_ill_path/gloss.json ./ecm2/extra_credit_output/dist/gloss.png
+
+./build/bin/ray -r 5 --distributed ./ecm2/extra_credit_scenes/global_ill_path/motion.json ./ecm2/extra_credit_output/dist/motion.png
+
+./build/bin/ray -r 5 --distributed ./ecm2/extra_credit_scenes/global_ill_path/soft_shad.json ./ecm2/extra_credit_output/dist/shadow.png
 ```
 Here are the scenes I rendered with distributed ray tracing. The quality is low because I could not use many samples or it would take a very long time to render. Path tracing is quicker and gets me higher quality images (see below). In these scenes, I showcase depth of field, motion blur, and soft shadows from area lights (I implement area lights as a radius from which I sample many point lights from).
+![cornell](./ecm2/extra_credit_output/dist/cornell.png)
+![dof](./ecm2/extra_credit_output/dist/dof.png)
+![gloss](./ecm2/extra_credit_output/dist/gloss.png)
+![motion](./ecm2/extra_credit_output/dist/motion.png)
+![soft shadows](./ecm2/extra_credit_output/dist/shadow.png)
 ### Path Tracing
 I implemented full path ray tracing using a Monte Carlo integration approach with Next Event Estimation (NEE) to accelerate convergence. In the `RayTracer::tracePathRay` function, I perform an iterative random walk for each pixel sample: at every bounce, I explicitly sample light sources (shadow rays) to calculate direct lighting and then use importance sampling (based on the material's BRDF) to choose a new random direction for the indirect light contribution. To prevent infinite recursion and ensure unbiased termination, I applied Russian Roulette after the third bounce, randomly terminating paths based on their current throughput. Invoked via the `--path` flag and quality can be controlled by specifying samples per pixel with `--spp <n>`.
+```bash
+./build/bin/ray -r 5 --path ./ecm2/extra_credit_scenes/global_ill_path/cornell.json ./ecm2/extra_credit_output/path/cornell.png
+
+./build/bin/ray -r 5 --path ./ecm2/extra_credit_scenes/global_ill_path/dof.json ./ecm2/extra_credit_output/path/dof.png
+
+./build/bin/ray -r 5 --path ./ecm2/extra_credit_scenes/global_ill_path/gloss.json ./ecm2/extra_credit_output/path/gloss.png
+
+./build/bin/ray -r 5 --path ./ecm2/extra_credit_scenes/global_ill_path/motion.json ./ecm2/extra_credit_output/path/motion.png
+
+./build/bin/ray -r 5 --path ./ecm2/extra_credit_scenes/global_ill_path/soft_shad.json ./ecm2/extra_credit_output/path/shadow.png
 ```
-insert commands here
-```
-Here are the same scenes from distributed ray tracing rendered with path tracing:
+Here are the same scenes from distributed ray tracing rendered with path tracing, you can see the color bleed in the cornell box!
+![cornell](./ecm2/extra_credit_output/path/cornell.png)
+![dof](./ecm2/extra_credit_output/path/dof.png)
+![gloss](./ecm2/extra_credit_output/path/gloss.png)
+![motion](./ecm2/extra_credit_output/path/motion.png)
+![soft shadows](./ecm2/extra_credit_output/path/shadow.png)
 ### Volumetric Ray Tracing
 I implemented solid volumetric textures (procedural 3D noise) by integrating a Fractional Brownian Motion (fBm) noise function directly into the volumetric ray marching loop. Inside the `RayTracer::traceVolumetric` function (specifically within the helper `sampleVolumeDensity`), I sample `glm::perlin` noise based on the ray's current 3D world position rather than 2D UV coordinates. This noise value is accumulated over multiple octaves in `fbmDensity` and used to modulate the local density of the participating medium, allowing for the rendering of heterogeneous solid volumes like smoke, clouds, or uneven fog. It's invoked through the scene json within a material. To enable it, add a `"volume"` object to the material and set the `"noise_scale"` parameter to a value greater than 0. The texture's appearance can be modified via `"noise_octaves"` (integer) and `"noise_gain"` (float) within the same volume block.
+```bash
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/fog.json ./ecm2/extra_credit_output/volumetric/fog.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/smoke.json ./ecm2/extra_credit_output/volumetric/smoke.png
+
+./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/nebula.json ./ecm2/extra_credit_output/volumetric/nebula.png
 ```
-insert commands here
-```
-Here are the scenes rendered from the above commands:
+Here are the scenes rendered from the above commands, although note that these commands do take a while to run! I render with a cubemap to show the media better.
+![fog](./ecm2/extra_credit_output/volumetric/fog.png)
+![orange smoke](./ecm2/extra_credit_output/volumetric/fog.png)
+![nebula](./ecm2/extra_credit_output/volumetric/fog.png)
 ### Advanced Shading
 #### Fresnel Shading with Anisotropy
 I implemented fresnel shading with anisotropy by integrating a Cook-Torrance microfacet BRDF that utilizes the GGX normal distribution function. In the Material::shade method, I handle anisotropy by splitting the surface roughness into two directional components ($\alpha_x$ and $\alpha_y$) based on an aspect ratio derived from the material's anisotropy factor ($\sqrt{1 - 0.9 \cdot \text{anisotropy}}$). I construct a local tangent frame ($T, B, N$) using the surface's partial derivatives (dPdu) and evaluate the anisotropic distribution function based on the dot products of the half-vector $H$ with the tangent and bitangent vectors. I also implemented a metallic workflow where the Fresnel reflectance term ($F_0$) is interpolated between a standard dielectric base (0.04) and the material's specular color based on a metallic parameter. To invoke use the `--fresnel` flag. The specific surface properties are then defined per-object in the scene json file within the "material" block using the keys "anisotropy" (a float value, typically -1.0 to 1.0) and "metallic" (a float between 0.0 and 1.0).
+```bash
+./build/bin/ray -r 8 -c /u/krisub/graphics/p1/cubemaps/cubemap_iceriver/negx.png ./ecm2/extra_credit_scenes/adv_shading/fresnel_rim.json ./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png
+
+./build/bin/ray -r 8 --fresnel -c <INSERT_PATH_TO_CUBEMAP> ./ecm2/extra_credit_scenes/adv_shading/fresnel_rim.json ./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png
+
+./build/bin/ray -r 8 ./ecm2/extra_credit_scenes/adv_shading/anisotropic_test.json ./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png
+
+./build/bin/ray -r 8 --fresnel ./ecm2/extra_credit_scenes/adv_shading/anisotropic_test.json ./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png
+
+./build/bin/ray -r 8 ./ecm2/extra_credit_scenes/adv_shading/anisotropic_cyl.json ./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png
+
+./build/bin/ray -r 8 --fresnel ./ecm2/extra_credit_scenes/adv_shading/anisotropic_cyl.json ./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png
 ```
-insert commands here
-```
-Here are the scenes rendered from the above commands:
+Here are the scenes rendered from the above commands. Note that the fresnel rim test case MUST be rendered with a cubemap because the sphere is dark and requires environment light to see the rim.
+Sphere without fresnel shading:
+![no rim](./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png)
+Sphere with fresnel shading, you can see the reflective rim:
+![rim](./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png)
+Metallic spheres without fresnel shading:
+![spheres](./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png)
+Metallic spheres with fresnel shading. From left to right, decreasing levels of anisotropy, visible in the spread of the highlight:
+![spheres](./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png)
+Cylinder without fresnel shading:
+![cyl](./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png)
+Cylinder with anisotropy and fresnel shading has a long, stretched highlight:
+![anisotropic cyl](./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png)
 #### Cel Shading
 I implemented cel shading (cartoon shading) as a post illumination quantization step at the end of the `Material::shade` function. After calculating the standard Phong color (emissive + ambient + diffuse + specular), I convert the result from RGB to the HSL (Hue, Saturation, Lightness) color space. I then discretize the lightness component into a set number of steps ("bins") using the formula `ceil(L * bins) / bins`, which snaps smooth gradients into flat bands of color, before converting the value back to RGB. Invoke via the `--cel` flag.
+```bash
+./build/bin/ray -r 5 --cel ./ecm2/extra_credit_scenes/cone.json ./ecm2/extra_credit_output/cel_cone.png
 ```
-insert commands here
-```
-Here are a few scenes rendered with cel shading:
+Here are a few montages of using cel shading (I use the above scenes)! I also cel shade the background cubemap here, and I implemented a feature for my animated trailed where obj meshes can be excluded from being cel shaded if specified in the scene json. I only put one command above as an example (because otherwise I have to include given scenes in my tar), but you can run any scene with cel shading, just add the `--cel` flag!
+cone:
+![cone](./ecm2/extra_credit_mtgs/cone.mtg.png)
+hitchcock:
+![hitchock](./ecm2/extra_credit_mtgs/hitchcock.mtg.png)
+reflection:
+![reflection](./ecm2/extra_credit_mtgs/reflection.mtg.png)
+hotel:
+![hotel](./ecm2/extra_credit_mtgs/objmesh_hotel.mtg.png)
 ### Caustics
 I implemented caustics using photon mapping to capture focused light patterns like those seen through glass. In the `RayTracer::emitCausticPhotons` function, I selectively target specular objects (detected via their bounding boxes and material properties) and emit photons from light sources towards them to maximize sampling efficiency. These photons are traced through the scene, and if they reflect or refract off a specular surface before hitting a diffuse one, they are stored in a kd tree (`PhotonMap`). During the rendering phase (within `tracePathRay` or `Material::shade`), I calculate the caustic contribution at a given intersection point by performing a k nearest neighbor search in the photon map to estimate the local photon density (irradiance). This feature is invoked using the flags `--caustic-photons <N>` (to set the number of photons), `--caustic-radius <R>` (the search radius for density estimation), and `--caustic-gather <K>` (the maximum number of photons to gather). Also requires the renderer to be in path tracing (`--path`) or distributed (`--distributed`) mode to function.
-```
-insert commands here
-```
-Here are my three scenes with caustics:
+```bash
+./build/bin/ray -r 8 --path --caustic-photons 1000000 --caustic-radius 0.5 --caustic-gather 200 ./ecm2/extra_credit_scenes/caustics/glass_ball.json ./ecm2/extra_credit_output/caustics/ball.png
 
+./build/bin/ray -r 8 --path --caustic-photons 1000000 --caustic-radius 0.5 --caustic-gather 200 ./ecm2/extra_credit_scenes/caustics/glass_cup.json ./ecm2/extra_credit_output/caustics/cone.png
+
+./build/bin/ray -r 8 --path --caustic-photons 1000000 --caustic-radius 0.5 --caustic-gather 200 ./ecm2/extra_credit_scenes/caustics/metal_ring.json ./ecm2/extra_credit_output/caustics/metal_ring.png
+```
+Here are my three scenes with caustics, note that these scenes take a long time to run!
+![glass ball](./ecm2/extra_credit_output/caustics/ball.png)
+![glass cone/cup](./ecm2/extra_credit_output/caustics/cone.png)
+![metal ring](./ecm2/extra_credit_output/caustics/metal_ring.png)
 ### Features which take a long time to run
 - volumetric ray tracing with many overlapping transparent media
 - path traced animation

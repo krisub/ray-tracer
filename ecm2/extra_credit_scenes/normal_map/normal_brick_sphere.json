@@ -1,0 +1,61 @@
+[
+  {
+    "camera": {
+      "position": [4, 0, 0],
+      "viewdir": [-1, 0, 0],
+      "updir": [0, 0, -1],
+      "fov": 45,
+      "aspectRatio": 1
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [-1, 0, 0],
+      "color": [0.9, 0.9, 0.9]
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [0, 0, -1],
+      "color": [0.5, 0.5, 0.5]
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [0, 1, -0.3],
+      "color": [0.4, 0.4, 0.4]
+    }
+  },
+  {
+    "ambient_light": {
+      "color": [0.3, 0.3, 0.3]
+    }
+  },
+  {
+    "translate": [
+      [0, 0, 0],
+      [
+        {
+          "scale": [
+            [1, 1, 1],
+            [
+              {
+                "sphere": {
+                  "material": {
+                    "ambient": { "constant": [0.2, 0.2, 0.2] },
+                    "diffuse": { "mapped": "./maps/brick_diffuse.png" },
+                    "specular": { "constant": [0.3, 0.3, 0.3] },
+                    "shininess": 32,
+                    "normal_map": "./maps/brick_normal.png",
+                    "height_map": "./maps/brick_displacement.png",
+                    "normal_map_strength": 3.0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    ]
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {"camera":{"position":[4,0,0],"viewdir":[-1,0,0],"updir":[0,0,1],"fov":50}},
+  {"ambient_light":{"color":[0.15,0.15,0.15]}},
+  {"directional_light":{"direction":[-1,-0.5,-0.3],"color":[0.6,0.6,0.6]}},
+  {"sphere":{"material":{"emissive":{"constant":[0,0.4,0]},"transmissive":{"constant":[0.75,0.75,0.75]},"index":1.5,"diffuse":{"constant":[0,0,0]},"specular":{"constant":[0,0,0]}}}},
+  {"translate":[[-2.5,0,0],[{"scale":[[0.01,4,4],[{"box":{"material":{"diffuse":{"constant":[0.6,0.5,0.5]},"ambient":{"constant":[0.2,0.2,0.2]}}}}]]}]]}
+]
