@@ -370,7 +370,8 @@ Here are links to the videos I created with my animation:
 #### Trailer
 I animated a bunch of scenes, all of them are produced by my ray tracer (except for the text!). The scenes are: a camera rotating with an obj mesh of sofia the first (found on [sketchfab here](https://sketchfab.com/3d-models/sofia-sofia-the-first-2112c438c1474694a762b51ae40d523a)), a camera panning up to participating media (volumetric ray tracing), zooming in via the camera field of view, a cel/cartoon shaded dragon going through a portal, path traced color changing caustics, and the end scene is just sofia rotating again. Also music is the sofia the first theme song because I made this into a lyric video LOL. I hope you think it's funny :)
 
-link to ray tracing trailer on youtube:
+[here is the link to my ray tracing trailer on youtube!](https://www.youtube.com/shorts/-4wQYVTm41k)
+
 ### Distributed Ray Tracing
 I implemented distributed ray tracing by utilizing Monte Carlo integration to average multiple stochastic samples, allowing for effects like global illumination, depth of field, and motion blur. Specifically, I added the `computeIndirectIllumination` function in `RayTracer.cpp`, which casts cosine-weighted rays over a hemisphere to capture diffuse color bleeding and specular inter-reflections. Additionally, I modified the primary ray generation logic to average samples taken from a lens aperture (for depth of field) and accumulated pixel colors across different time steps (for motion blur). Invoked via the command line using the flag `--distributed` or by setting the key `"tracer"` to `"distributed"` in the settings JSON file. There are other parameters like `"global_illumination_samples"` in the settings json or camera properties like `"f_number"` and `"shutter_open"` within the scene json file.
 ```bash
