@@ -409,9 +409,9 @@ Here are the scenes rendered from the above commands, although note that these c
 
 ![fog](./ecm2/extra_credit_output/volumetric/fog.png)
 
-![orange smoke](./ecm2/extra_credit_output/volumetric/fog.png)
+![orange smoke](./ecm2/extra_credit_output/volumetric/smoke.png)
 
-![nebula](./ecm2/extra_credit_output/volumetric/fog.png)
+![nebula](./ecm2/extra_credit_output/volumetric/nebula.png)
 ### Advanced Shading
 #### Fresnel Shading with Anisotropy
 I implemented fresnel shading with anisotropy by integrating a Cook-Torrance microfacet BRDF that utilizes the GGX normal distribution function. In the Material::shade method, I handle anisotropy by splitting the surface roughness into two directional components ($\alpha_x$ and $\alpha_y$) based on an aspect ratio derived from the material's anisotropy factor ($\sqrt{1 - 0.9 \cdot \text{anisotropy}}$). I construct a local tangent frame ($T, B, N$) using the surface's partial derivatives (dPdu) and evaluate the anisotropic distribution function based on the dot products of the half-vector $H$ with the tangent and bitangent vectors. I also implemented a metallic workflow where the Fresnel reflectance term ($F_0$) is interpolated between a standard dielectric base (0.04) and the material's specular color based on a metallic parameter. To invoke use the `--fresnel` flag. The specific surface properties are then defined per-object in the scene json file within the "material" block using the keys "anisotropy" (a float value, typically -1.0 to 1.0) and "metallic" (a float between 0.0 and 1.0).
