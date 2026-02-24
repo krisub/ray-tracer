@@ -1,0 +1,40 @@
+[
+  {
+    "camera": {
+      "position": [3, 2, 2.5],
+      "viewdir": [-0.6, -0.5, -0.6],
+      "updir": [0, 1, 0],
+      "aspectRatio": 1,
+      "fov": 60
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [-0.5, -1, -0.2],
+      "color": [1, 1, 1]
+    }
+  },
+  {
+    "ambient_light": { "color": [0.1, 0.1, 0.1] }
+  },
+  {
+    "scale": [
+      [0.8, 0.8, 0.8],
+      [
+        {
+          "implicit_surface": {
+            "type": "goursat",
+            "a": 0,
+            "b": 0,
+            "c": 1,
+            "material": {
+              "diffuse": { "constant": [0.3, 0.7, 0.4] },
+              "specular": { "constant": [0.7, 0.7, 0.7] },
+              "shininess": 96
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

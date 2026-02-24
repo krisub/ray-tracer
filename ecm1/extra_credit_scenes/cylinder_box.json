@@ -1,0 +1,97 @@
+[
+    {
+      "camera": {
+        "position": [0.0, 0.0, 4.0],
+        "viewdir": [0.0, 0.0, -1.0],
+        "updir": [0.0, 1.0, 0.0],
+        "aspectratio": 1.0,
+        "fov": 50
+      }
+    },
+    {
+      "directional_light": {
+        "direction": [0.2, -0.2, -1.0],
+        "color": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "ambient_light": {
+        "color": [0.1, 0.1, 0.1]
+      }
+    },
+    {
+      "translate": [
+        [0.0, 0.0, -4.0],
+        [
+          {
+            "scale": [
+              [10.0, 10.0, 1.0],
+              [
+                {
+                  "square": {
+                    "material": {
+                      "diffuse": { "constant": [1.0, 1.0, 1.0] },
+                      "specular": { "constant": [0.0, 0.0, 0.0] },
+                      "ambient": { "constant": [0.0, 0.0, 0.0] }
+                    }
+                  }
+                }
+              ]
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "translate": [
+        [-0.2, 0.0, 0.0],
+        [
+          {
+              "box": {
+                "material": {
+                  "diffuse": { "constant": [0.0, 0.1, 0.1] },
+                  "specular": { "constant": [0.5, 0.5, 0.5] },
+                  "shininess": 30.0,
+                  "transmissive": { "constant": [0.1, 0.9, 0.9] },
+                  "index": 1.2
+                }
+              }
+          }
+        ]
+      ]
+    },
+    {
+      "translate": [
+        [0.2, 0.0, 0.0],
+        [
+          {
+            "rotate": [
+               [1.0, 0.0, 0.0],
+               1.5708,
+               [
+                 {
+                   "scale": [
+                     [0.65, 0.65, 1.0],
+                     [
+                       {
+                         "cylinder": {
+                           "capped": true,
+                           "material": {
+                             "diffuse": { "constant": [0.1, 0.1, 0.0] },
+                             "specular": { "constant": [0.5, 0.5, 0.5] },
+                             "shininess": 30.0,
+                             "transmissive": { "constant": [0.9, 0.9, 0.1] },
+                             "index": 1.3
+                           }
+                         }
+                       }
+                     ]
+                   ]
+                 }
+               ]
+            ]
+          }
+        ]
+      ]
+    }
+  ]

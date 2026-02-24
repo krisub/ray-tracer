@@ -1,0 +1,32 @@
+[
+  {
+    "camera": {
+      "position": ["3*cos(t)", "0", "3*sin(t)"],
+      "viewdir": ["-cos(t)", "0", "-sin(t)"],
+      "updir": [0, 1, 0],
+      "aspectRatio": 1
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [0, 0, -1],
+      "color": [0.8, 0.8, 0.8]
+    }
+  },
+  {
+    "point_light": {
+      "position": ["-1+0.5*cos(t)", "1", "-1"],
+      "color": [1, 0.6, 0.6]
+    }
+  },
+  {
+    "sphere": {
+      "material": {
+        "ambient": {"constant": [0, 1, 1]},
+        "specular": {"constant": [1, 1, 0]},
+        "diffuse": {"constant": [0.4, 0.4, 0]},
+        "shininess": 64
+      }
+    }
+  }
+]

@@ -1,0 +1,112 @@
+[
+  {
+    "camera": {
+      "position": [0.0, 1.5, 8.0],
+      "viewdir": [0.0, -0.1, -1.0],
+      "updir": [0.0, 1.0, 0.0],
+      "aspectRatio": 1.0,
+      "fov": 45.0,
+      "focal_distance": 5.1,
+      "f_number": 1.4
+    }
+  },
+  {
+    "ambient_light": {
+      "color": [0.05, 0.05, 0.05]
+    }
+  },
+  {
+    "point_light": {
+      "position": [2.5, 4.0, 3.0],
+      "color": [1.0, 1.0, 1.0],
+      "constant_attenuation_coeff": 0.0,
+      "linear_attenuation_coeff": 0.01,
+      "quadratic_attenuation_coeff": 0.001
+    }
+  },
+  {
+    "translate": [
+      [0.0, 0.0, 3.0],
+      [
+        {
+          "sphere": {
+            "material": {
+              "diffuse": { "constant": [0.8, 0.2, 0.2] },
+              "specular": { "constant": [0.4, 0.4, 0.4] },
+              "shininess": 40.0
+            }
+          }
+        }
+      ]
+    ]
+  },
+  {
+    "translate": [
+      [-1.6, -0.2, -2.0],
+      [
+        {
+          "scale": [
+            [0.8, 0.8, 0.8],
+            [
+              {
+                "sphere": {
+                  "material": {
+                    "diffuse": { "constant": [0.2, 0.8, 0.3] },
+                    "specular": { "constant": [0.3, 0.3, 0.3] },
+                    "shininess": 30.0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    ]
+  },
+  {
+    "translate": [
+      [1.8, -0.2, -4.0],
+      [
+        {
+          "scale": [
+            [0.8, 0.8, 0.8],
+            [
+              {
+                "sphere": {
+                  "material": {
+                    "diffuse": { "constant": [0.2, 0.4, 0.9] },
+                    "specular": { "constant": [0.5, 0.5, 0.5] },
+                    "shininess": 60.0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    ]
+  },
+  {
+    "translate": [
+      [0.0, -1.0, 0.0],
+      [
+        {
+          "scale": [
+            [10.0, 0.1, 10.0],
+            [
+              {
+                "box": {
+                  "material": {
+                    "diffuse": { "constant": [0.7, 0.7, 0.7] },
+                    "specular": { "constant": [0.2, 0.2, 0.2] },
+                    "shininess": 10.0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    ]
+  }
+]

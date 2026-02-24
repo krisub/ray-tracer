@@ -1,0 +1,87 @@
+[
+  {
+    "camera": {
+      "position": [0.0, 10.0, 5.0],
+      "viewdir": [-0.15, -0.88, -0.45],
+      "updir": [0.0, 1.0, 0.0],
+      "aspectratio": 1.0
+    }
+  },
+  {
+    "ambient_light": {
+      "color": [0.02, 0.02, 0.02]
+    }
+  },
+  {
+    "point_light": {
+      "position": [6.0, 10.0, -4.0],
+      "color": [1.0, 1.0, 1.0],
+      "constant_attenuation_coeff": 0.08,
+      "linear_attenuation_coeff": 0.0,
+      "quadratic_attenuation_coeff": 0.0
+    }
+  },
+  {
+    "translate": [
+      [0.0, -0.05, 0.0],
+      [
+        {
+          "scale": [
+            [40.0, 0.1, 40.0],
+            [
+              {
+                "box": {
+                  "material": {
+                    "diffuse": { "constant": [0.85, 0.85, 0.85] },
+                    "ambient": { "constant": [0.05, 0.05, 0.05] },
+                    "specular": { "constant": [0.0, 0.0, 0.0] },
+                    "shininess": 1.0
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    ]
+  },
+  {
+    "translate": [
+      [0.0, 0.0, 0.0],
+      [
+        {
+          "scale": [
+            [1.0, 1.0, 1.0],
+            [
+              {
+                "rotate": [
+                  [1.0, 0.0, 0.0],
+                  -1.5708,
+                  [
+                    {
+                      "cone": {
+                        "height": 3.0,
+                        "bottom_radius": 0.6,
+                        "top_radius": 1.2,
+                        "capped": false,
+                        "material": {
+                          "diffuse": { "constant": [0.0, 0.0, 0.0] },
+                          "ambient": { "constant": [0.0, 0.0, 0.0] },
+                          "specular": { "constant": [0.3, 0.3, 0.3] },
+                          "reflective": { "constant": [0.05, 0.05, 0.05] },
+                          "transmissive": { "constant": [0.92, 0.92, 0.92] },
+                          "shininess": 128.0,
+                          "index": 1.5
+                        }
+                      }
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    ]
+  }
+]

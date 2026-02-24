@@ -1,0 +1,38 @@
+[
+  {
+    "camera": {
+      "position": [4, 0, 0],
+      "viewdir": [-1, 0, 0],
+      "updir": [0, 1, 0],
+      "aspectRatio": 1,
+      "fov": 60
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [-1, -1, -0.2],
+      "color": [1, 1, 1]
+    }
+  },
+  {
+    "ambient_light": { "color": [0.1, 0.1, 0.1] }
+  },
+  {
+    "scale": [
+      [1.2, 1.2, 1.2],
+      [
+        {
+          "implicit_surface": {
+            "type": "sphere",
+            "radius": 1,
+            "material": {
+              "diffuse": { "constant": [0.2, 0.5, 0.8] },
+              "specular": { "constant": [0.8, 0.8, 0.8] },
+              "shininess": 64
+            }
+          }
+        }
+      ]
+    ]
+  }
+]

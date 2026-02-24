@@ -1,0 +1,31 @@
+[
+  {
+    "camera": {
+      "position": [0, 0, 8.0],
+      "viewdir": [0, 0, -1],
+      "updir": [0, 1, 0],
+      "aspectratio": 1.0
+    }
+  },
+  {
+    "directional_light": {
+      "direction": [0.0, 0.0, -1.0],
+      "color": [1.0, 1.0, 1.0]
+    }
+  },
+  {
+    "scale": [
+      [10.0, 10.0, 1.0],
+      [
+        {
+          "square": {
+            "material": {
+              "diffuse": { "mapped": "tiny.bmp" },
+              "ambient": { "constant": [0.1, 0.1, 0.1] }
+            }
+          }
+        }
+      ]
+    ]
+  }
+]
