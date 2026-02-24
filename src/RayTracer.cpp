@@ -2058,6 +2058,10 @@ void RayTracer::applyCelOutlineFromPrimaryHits() {
     for (int x = 0; x < buffer_width; ++x) {
       const size_t idx = static_cast<size_t>(x + y * buffer_width);
       const PrimaryHitInfo &center = primaryHitBuffer[idx];
+      if (center.hit && center.object != nullptr && !center.object->isCelEnabled()) {
+        edgeMask[idx] = 0;
+        continue;
+      }
       bool isEdge = false;
 
       for (int dy = -1; dy <= 1 && !isEdge; ++dy) {
@@ -2073,6 +2077,10 @@ void RayTracer::applyCelOutlineFromPrimaryHits() {
 
           const size_t nIdx = static_cast<size_t>(nx + ny * buffer_width);
           const PrimaryHitInfo &neighbor = primaryHitBuffer[nIdx];
+          if (neighbor.hit && neighbor.object != nullptr &&
+              !neighbor.object->isCelEnabled()) {
+            continue;
+          }
 
           if (center.hit != neighbor.hit) {
             isEdge = true;

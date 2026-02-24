@@ -321,6 +321,9 @@ The following parameters are supported:
   - `gennormals`: A boolean. If this is set to be true then per-vertex normals 
      will be automatically generated for the mesh, overwriting existing normals
      if any exist.
+  - `cel`: Optional boolean (default `true`). If set to `false`, this mesh is
+     excluded from cel quantization and cel outlines.
+  - `cel_exempt`: Optional boolean alias for `cel: false`.
 
 Note that the OBJ file format is a terrible mess. It allows things like 
 multiple meshes per file, multiple materials per mesh, different rendering

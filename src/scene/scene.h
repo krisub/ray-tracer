@@ -171,12 +171,16 @@ class SceneObject : public Geometry {
 public:
   const Material &getMaterial() const { return this->material; };
   void setMaterial(Material *m) { this->material = *m; };
+  bool isCelEnabled() const { return celEnabled; }
+  void setCelEnabled(bool enabled) { celEnabled = enabled; }
 
   void glDraw(int quality, bool actualMaterials, bool actualTextures) const;
 
 protected:
-  SceneObject(Scene *scene, Material *mat) : Geometry(scene), material{*mat} {}
+  SceneObject(Scene *scene, Material *mat)
+      : Geometry(scene), material{*mat}, celEnabled(true) {}
   Material material;
+  bool celEnabled;
 };
 
 class Scene {

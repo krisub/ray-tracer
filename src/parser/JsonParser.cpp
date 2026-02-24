@@ -805,6 +805,13 @@ std::vector<Trimesh *> parseObjmeshBody(const json &j, ParseData &pd) {
   std::string path = (pd.scene_dir / objFile).string();
   bool genNormals = false;
   IGNORE_MISSING(j.at("gennormals").get_to(genNormals));
+  bool celEnabled = true;
+  IGNORE_MISSING(j.at("cel").get_to(celEnabled));
+  bool celExempt = false;
+  IGNORE_MISSING(j.at("cel_exempt").get_to(celExempt));
+  if (celExempt) {
+    celEnabled = false;
+  }
 
   std::vector<Trimesh *> results;
 
@@ -844,6 +851,7 @@ std::vector<Trimesh *> parseObjmeshBody(const json &j, ParseData &pd) {
     Trimesh *t = new Trimesh(pd.s, &pd.cur_mat, pd.getCurrentTransform());
 
     loadObjToTrimesh(reader, s, t, pd);
+    t->setCelEnabled(celEnabled);
 
     if (genNormals) {
       t->generateNormals();

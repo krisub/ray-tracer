@@ -555,8 +555,12 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     color += kd(iTex) * causticIrradiance;
   }
 
+  const SceneObject *hitObject = i.getObject();
+  const bool celEnabledForObject =
+      (hitObject == nullptr) ? true : hitObject->isCelEnabled();
   if (traceUI && traceUI->getCel() &&
-      traceUI->tracerMode() != TraceUI::TracerMode::Path) {
+      traceUI->tracerMode() != TraceUI::TracerMode::Path &&
+      celEnabledForObject) {
     color = celshade::quantizeLightness(color, traceUI->getCelBins());
   }
 
