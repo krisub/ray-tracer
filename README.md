@@ -431,22 +431,22 @@ I implemented fresnel shading with anisotropy by integrating a Cook-Torrance mic
 Here are the scenes rendered from the above commands. Note that the fresnel rim test case MUST be rendered with a cubemap because the sphere is dark and requires environment light to see the rim.
 
 Sphere without fresnel shading:
-![no rim](./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png)
+[no rim](./ecm2/extra_credit_output/adv_shading/no_fresnel_rim.png)
 
 Sphere with fresnel shading, you can see the reflective rim:
-![rim](./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png)
+[rim](./ecm2/extra_credit_output/adv_shading/with_fresnel_rim.png)
 
 Metallic spheres without fresnel shading:
-![spheres](./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png)
+[spheres](./ecm2/extra_credit_output/adv_shading/no_anisotropic_test.png)
 
 Metallic spheres with fresnel shading. From left to right, decreasing levels of anisotropy, visible in the spread of the highlight:
-![spheres](./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png)
+[spheres](./ecm2/extra_credit_output/adv_shading/with_anisotropic_test.png)
 
 Cylinder without fresnel shading:
-![cyl](./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png)
+[cyl](./ecm2/extra_credit_output/adv_shading/no_anisotropic_cyl.png)
 
 Cylinder with anisotropy and fresnel shading has a long, stretched highlight:
-![anisotropic cyl](./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png)
+[anisotropic cyl](./ecm2/extra_credit_output/adv_shading/with_anisotropic_cyl.png)
 #### Cel Shading
 I implemented cel shading (cartoon shading) as a post illumination quantization step at the end of the `Material::shade` function. After calculating the standard Phong color (emissive + ambient + diffuse + specular), I convert the result from RGB to the HSL (Hue, Saturation, Lightness) color space. I then discretize the lightness component into a set number of steps ("bins") using the formula `ceil(L * bins) / bins`, which snaps smooth gradients into flat bands of color, before converting the value back to RGB. Invoke via the `--cel` flag.
 ```bash
