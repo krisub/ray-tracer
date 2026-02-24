@@ -1,5 +1,18 @@
 I detail my [Design Decisions](#general-design-decisions) (specifically where I differ from the reference solution) below, as well as my [#Extra Credit](#extra-credit-design-decisions) work here.
 
+**IMPORTANT: my cmake links the onnx library and the binary expects that the onnx library and model are right next to it in the directory tree!** Ex.
+```
+> build
+	> bin
+		> lib # this is the onnx library
+		> neural_aa_best.onnx # this is my neural net
+		> neural_aa_best.onnx.data # these are the model weights
+		> ray # this is the actual binary
+```
+**I have modified my cmake lists so that this setup happens automatically, but if the binary is moved, then it will fail to run because it cannot find the onnx library!**
+
+**Additionally, I have added a visualization flag to adaptive antialising to prove that my adaptive AA works, please look at that section!**
+
 Build instructions (these are the normal build instructions):
 ```bash
 mkdir build
@@ -173,6 +186,20 @@ The total time to render my image was 2.86 seconds, and there were ~2.54M rays t
  - `./build/bin/ray -r 5 --aaa ./ecm1/extra_credit_scenes/hotel.json ./ecm1/extra_credit_output/hotel.png`
 ![hotel_aaa.mtg.png](./ecm1/extra_credit_mtgs/hotel_aaa.mtg.png)
 The total time to render my image was 121.40 seconds, and there were ~19.1M rays traced.
+
+Here is a visualization to show that adaptive antialiasing is working, it can be enabled by running the above commands with the `--aa-visualize` command line flag:
+```bash
+./build/bin/ray -r 5 --aaa --aa-visualize ./ecm1/extra_credit_scenes/hitchcock.json ./ecm1/extra_credit_output/hitchcock.png
+
+./build/bin/ray -r 5 --aaa --aa-visualize ./ecm1/extra_credit_scenes/hotel.json ./ecm1/extra_credit_output/hotel.png
+```
+
+![aa visualize of hitchcock](./ecm1/extra_credit_output/hitchcock_aa_vis.png)
+
+  
+![aa visualize of hotel](./ecm1/extra_credit_output/hotel_aa_vis.png)
+
+The `--aa-visualize` flag generates a heatmap of sampling density by creating a grayscale image where the brightness of a pixel corresponds to how many rays were fired to calculate that specific pixel's color. You can see in the above visualizations that there are more rays fired at the edges of objects. The areas where adaptive recursion terminated immediately are black/dark gray, while the higher contrast areas are white. This proves that my adaptive AA is actually finding the edges of objects!
 
 #### Fast Approximate Antialiasing
 I implement fast approximate antialiasing method as a post-process filter that runs in parallel over the image without casting additional rays. To ensure deterministic results and avoid feedback loops, I first freeze the input by creating a full snapshot of the current RGB buffer; all reads come from this copy while writes go to the original. For every pixel $(i,j)$, I convert the color to floating-point luminance using standard weights ($Y=0.299R+0.587G+0.114B$) (equation from BT.601) and check for edges by gathering a 5-pixel cross neighborhood (center, north, south, east, west). I calculate the local contrast as the difference between the maximum and minimum luminance in this neighborhood ($contrast = Y_{max} - Y_{min}$), and ignore any areas where the contrast falls below a low threshold of approximately $1/255$.
