@@ -339,6 +339,7 @@ I implemented neural network antialiasing by training a deep learning model (uti
 Here I compare render time and image quality for large scenes like hotel, dragon, etc. I use montages because the reference solution is using fully supersampled anti aliasing (which is the ground truth). Hotel was part of the training set, but dragon 4 was not (they were in the testing set). I also only trained/tested/validated on half of the cubemaps, of which iceriver (used below) was not one of. The full training script is at `./src/nn/train.py`.
 
 Time to render hotel with neural aa: 3.17 seconds
+
 Time to render reference with fully supersampled aa: 4.62 seconds
 
 Montage (I do not see a visual difference):
@@ -346,6 +347,7 @@ Montage (I do not see a visual difference):
 ![hotel](./ecm2/extra_credit_mtgs/objmesh_hotel_neural.mtg.png)
 
 Time to render scenes 2, dragon 4 with neural aa: 1.81 seconds
+
 Time to render reference with fully supersampled aa: 1.97 seconds
 
 Montage (there is a visual difference in that mine is darker, but I think this is also because of design decisions in my ray tracer):
