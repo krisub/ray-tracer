@@ -8,7 +8,7 @@
  * - `PointLight`: localized light source with falloff (light bulb)
  *
  * these classes are responsible for:
- * 1. Telling the shader how bright the light is at a given point
+ * 1. telling the shader how bright the light is at a given point
  * (`distanceAttenuation`)
  * 2. telling the shader if a point is in shadow (`shadowAttenuation`)
  *

@@ -60,7 +60,6 @@ private:
   uint32_t basePrimCount = 0;
   uint32_t spatialDupCount = 0;
   std::vector<BvhPrimRef> prims;
-  // Leaf primitive references in DFS leaf order.
   std::vector<uint32_t> primIndices;
   std::vector<BvhNode> nodes;
   std::vector<Bvh8Node> wide8Nodes;

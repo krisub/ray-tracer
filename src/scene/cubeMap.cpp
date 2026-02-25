@@ -7,17 +7,11 @@
 extern TraceUI *traceUI;
 
 glm::dvec3 CubeMap::getColor(ray r) const {
-  // Environment lookup based on ray direction.
-  //
-  // We select the cubemap face based on the major axis of the direction, then
-  // project onto that face to get (u,v) in [0,1]^2.
-  //
-  // Implementation note:
-  // Rather than hardcoding u/v formulas per-face, we define for each face:
-  //   - a face normal n
-  //   - a "right" axis r (increasing u)
-  //   - an "up" axis    u (increasing v)
-  // and compute:
+  // for each face
+  //   - face normal n
+  //   - "right" axis r (increasing u)
+  //   - "up" axis    u (increasing v)
+  // then compute:
   //   s = dot(d, right) / dot(d, n)
   //   t = dot(d, up)    / dot(d, n)
   // then map (s,t) from [-1,1] to (u,v) in [0,1].
@@ -110,7 +104,6 @@ glm::dvec3 CubeMap::getColor(ray r) const {
   u = clamp01(u);
   v = clamp01(v);
 
-  // Optional simple box filter on the selected face.
   const int fw = traceUI ? std::max(1, traceUI->getFilterWidth()) : 1;
   if (fw <= 1) {
     return tMap[face]->getMappedValue(glm::dvec2(u, v));

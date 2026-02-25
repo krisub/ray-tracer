@@ -1,17 +1,8 @@
 I detail my [Design Decisions](#general-design-decisions) (specifically where I differ from the reference solution) below, as well as my [#Extra Credit](#extra-credit-design-decisions) work here.
 
-**IMPORTANT: my cmake links the onnx library and the binary expects that the onnx library and model are right next to it in the directory tree!** Ex.
-```
-> build
-	> bin
-		> lib # this is the onnx library
-		> neural_aa_best.onnx # this is my neural net
-		> neural_aa_best.onnx.data # these are the model weights
-		> ray # this is the actual binary
-```
-**I have modified my cmake lists so that this setup happens automatically, but if the binary is moved, then it will fail to run because it cannot find the onnx library!**
+**I am taking one late day on this assignment!**
 
-**Additionally, I have added a visualization flag to adaptive antialising to prove that my adaptive AA works, please look at that section!**
+**Additionally, I have added a visualization flag to adaptive antialising to prove that my adaptive AA from Mileston 1 works.**
 
 Build instructions (these are the normal build instructions):
 ```bash
@@ -113,13 +104,11 @@ What I did in Milestone 2:
 11. Portals.
 12. Lipschitz-continuous implicit surfaces.
 13. Solid volumetric textures.
-14. Neural net for antialiasing.
-15. Animation, as well as  a trailer.
-16. Distributed ray tracing (global illumination).
-17. Path tracing.
-18. Volumetric ray tracing of participating media.
-19. Advanced fresnel and cel shading.
-20. Caustics.
+14. Animation, as well as  a trailer.
+15. Distributed ray tracing (global illumination).
+16. Path tracing.
+17. Advanced fresnel and cel shading.
+18. Caustics.
 ### Total Internal Reflection:
 Snell's law: $n_{1}\sin(\theta_{1})=n_{2}\sin(\theta_{2}))$
 Total internal reflection occurs when we go from a denser to less desnse material, and for a large enough incidence angle, we get that $\sin(\theta_{2})>1$ which is impossible. There is no real refracted ray, the interface reflects all the light. So TIR occurs only when the ray is leaving the denser medium (ex. inside glass, hitting the glass-air boundary) and the angle of incidence is above the critical angle: $\theta_{c}=\arcsin\left( \frac{n_{2}}{n_{1}} \right)$.
@@ -356,31 +345,6 @@ Here are the scenes rendered from the above commands. I use a cubemap to show th
 ![sphere](./ecm2/extra_credit_output/imp_surf/sphere.png)
 
 ![torus](./ecm2/extra_credit_output/imp_surf/torus.png)
-### Neural Net for Antialiasing (Upsampling)
-I implemented neural network antialiasing by training a deep learning model (utilizing VGG16-based perceptual loss and sobel edge loss) to learn the mapping between aliased and antialiased images, which I then exported to the ONNX format. Within the renderer's `aaNeuralImage` function, I integrated the ONNX Runtime C++ API to load this model (`neural_aa_best.onnx`) and perform inference as a post-processing step; this involves converting the raw pixel buffer into a normalized NCHW float tensor, running the model, and clamping the output back into the image buffer. Invoked via the command line `--neural flag`.
-
-```bash
-./build/bin/ray -r 5 --neural ./ecm1/extra_credit_scenes/hotel.json ./ecm2/extra_credit_output/neural_aa_hotel.png
-```
-
-Here I compare render time and image quality for large scenes like hotel, dragon, etc. I use montages because the reference solution is using fully supersampled anti aliasing (which is the ground truth). Hotel was part of the training set, but dragon 4 was not (they were in the testing set). I also only trained/tested/validated on half of the cubemaps, of which iceriver (used below) was not one of. The full training script is at `./src/nn/train.py`.
-
-Time to render hotel with neural aa: 3.17 seconds
-
-Time to render reference with fully supersampled aa: 4.62 seconds
-
-Montage (I do not see a visual difference):
-
-![hotel](./ecm2/extra_credit_mtgs/objmesh_hotel_neural.mtg.png)
-
-Time to render scenes 2, dragon 4 with neural aa: 1.81 seconds
-
-Time to render reference with fully supersampled aa: 1.97 seconds
-
-Montage (there is a visual difference in that mine is darker, but I think this is also because of design decisions in my ray tracer):
-
-![trimesh dragon 4](./ecm2/extra_credit_mtgs/trimesh_dragon4.mtg.png)
-
 ### Animation
 I implemented animation by creating a dedicated render loop in the command- line interface that dynamically modifies the scene's json definition for every frame before rendering. Inside `CommandLineUI::runAnimation`, I calculate a current time value t (interpolated between the start and end times) and pass the raw JSON object to a `substituteExpressions` function. This function recursively traverses the JSON tree, identifying string values that represent mathematical expressions (containing variables like t) and evaluates them to produce concrete numeric values for that specific frame. This feature is invoked via the command line using the arguments `--animation <N>` (to set the number of frames), `--t-start <val>`, and `--t-end <val>`, while the scene json itself must use expression strings (e.g., `"rotate": [[0,1,0], "360*t"]`) instead of static numbers for any properties that should change over time.
 ```bash
@@ -447,22 +411,6 @@ Here are the same scenes from distributed ray tracing rendered with path tracing
 ![motion](./ecm2/extra_credit_output/path/motion.png)
 
 ![soft shadows](./ecm2/extra_credit_output/path/shadow.png)
-### Volumetric Ray Tracing
-I implemented solid volumetric textures (procedural 3D noise) by integrating a Fractional Brownian Motion (fBm) noise function directly into the volumetric ray marching loop. Inside the `RayTracer::traceVolumetric` function (specifically within the helper `sampleVolumeDensity`), I sample `glm::perlin` noise based on the ray's current 3D world position rather than 2D UV coordinates. This noise value is accumulated over multiple octaves in `fbmDensity` and used to modulate the local density of the participating medium, allowing for the rendering of heterogeneous solid volumes like smoke, clouds, or uneven fog. It's invoked through the scene json within a material. To enable it, add a `"volume"` object to the material and set the `"noise_scale"` parameter to a value greater than 0. The texture's appearance can be modified via `"noise_octaves"` (integer) and `"noise_gain"` (float) within the same volume block.
-```bash
-./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/fog.json ./ecm2/extra_credit_output/volumetric/fog.png
-
-./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/smoke.json ./ecm2/extra_credit_output/volumetric/smoke.png
-
-./build/bin/ray -r 5 ./ecm2/extra_credit_scenes/volumetric/nebula.json ./ecm2/extra_credit_output/volumetric/nebula.png
-```
-Here are the scenes rendered from the above commands, although note that these commands do take a while to run! I render with a cubemap to show the media better.
-
-![fog](./ecm2/extra_credit_output/volumetric/fog.png)
-
-![orange smoke](./ecm2/extra_credit_output/volumetric/smoke.png)
-
-![nebula](./ecm2/extra_credit_output/volumetric/nebula.png)
 ### Advanced Shading
 #### Fresnel Shading with Anisotropy
 I implemented fresnel shading with anisotropy by integrating a Cook-Torrance microfacet BRDF that utilizes the GGX normal distribution function. In the Material::shade method, I handle anisotropy by splitting the surface roughness into two directional components ($\alpha_x$ and $\alpha_y$) based on an aspect ratio derived from the material's anisotropy factor ($\sqrt{1 - 0.9 \cdot \text{anisotropy}}$). I construct a local tangent frame ($T, B, N$) using the surface's partial derivatives (dPdu) and evaluate the anisotropic distribution function based on the dot products of the half-vector $H$ with the tangent and bitangent vectors. I also implemented a metallic workflow where the Fresnel reflectance term ($F_0$) is interpolated between a standard dielectric base (0.04) and the material's specular color based on a metallic parameter. To invoke use the `--fresnel` flag. The specific surface properties are then defined per-object in the scene json file within the "material" block using the keys "anisotropy" (a float value, typically -1.0 to 1.0) and "metallic" (a float between 0.0 and 1.0).
@@ -539,14 +487,13 @@ Here are my three scenes with caustics, note that these scenes take a long time 
 
 ![metal ring](./ecm2/extra_credit_output/caustics/metal_ring.png)
 ### Features which take a long time to run
-- volumetric ray tracing with many overlapping transparent media
 - path traced animation
 - distributed ray tracing
 - caustics
 ## List of Implemented Features!
 ```
 Approved extra credit implemented:
-- creative scene
+- creative scene (maybe partial)
 - adaptive ray termination
 - stochastic jittered supersampling
 - antialiasing by adaptive supersampling
@@ -556,12 +503,10 @@ Approved extra credit implemented:
 - portals
 - Lipschitz-continuous implicit surfaces
 - solid volumetric textures
-- neural network
 - animation, plus trailer
 - distributed ray tracing
 - full path tracing
-- volumetric ray tracing
-- fresnel shading and cel shading
+- fresnel shading (maybe partial) and cel shading
 - caustics
   
 Variable extra credit implemented:

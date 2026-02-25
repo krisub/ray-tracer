@@ -52,7 +52,7 @@ public:
   int aaAdaptiveImage();
   int aaFastApproxImage();
   int aaStochasticImage();
-  int aaNeuralImage();
+  // int aaNeuralImage();
   bool checkRender();
   void waitRender();
   void applyCelPostProcess();

@@ -70,29 +70,29 @@ target_link_libraries(ray ${OPENGL_glu_LIBRARY})
 target_include_directories(ray SYSTEM PUBLIC ${pwd}/libs)
 
 
-set(NN_PATH "${pwd}/nn")
+# set(NN_PATH "${pwd}/nn")
 
-target_include_directories(ray SYSTEM PUBLIC ${NN_PATH}/include)
+# target_include_directories(ray SYSTEM PUBLIC ${NN_PATH}/include)
 
-find_library(ORT_LIB 
-    NAMES onnxruntime 
-    PATHS ${NN_PATH}/lib 
-    NO_DEFAULT_PATH
-)
-target_link_libraries(ray ${ORT_LIB})
+# find_library(ORT_LIB 
+#     NAMES onnxruntime 
+#     PATHS ${NN_PATH}/lib 
+#     NO_DEFAULT_PATH
+# )
+# target_link_libraries(ray ${ORT_LIB})
 
-set_target_properties(ray PROPERTIES
-    BUILD_WITH_INSTALL_RPATH TRUE
-    INSTALL_RPATH "$ORIGIN/lib"
-)
+# set_target_properties(ray PROPERTIES
+#     BUILD_WITH_INSTALL_RPATH TRUE
+#     INSTALL_RPATH "$ORIGIN/lib"
+# )
 
-add_custom_command(TARGET ray POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ray>/lib
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${NN_PATH}/lib $<TARGET_FILE_DIR:ray>/lib
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NN_PATH}/neural_aa_best.onnx $<TARGET_FILE_DIR:ray>/
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NN_PATH}/neural_aa_best.onnx.data $<TARGET_FILE_DIR:ray>/
-    COMMENT "copying ONNX Runtime libs, model, and weights to build directory"
-)
+# add_custom_command(TARGET ray POST_BUILD
+#     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ray>/lib
+#     COMMAND ${CMAKE_COMMAND} -E copy_directory ${NN_PATH}/lib $<TARGET_FILE_DIR:ray>/lib
+#     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NN_PATH}/neural_aa_best.onnx $<TARGET_FILE_DIR:ray>/
+# 		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NN_PATH}/neural_aa_best.onnx.data $<TARGET_FILE_DIR:ray>/
+#     COMMENT "copying ONNX Runtime libs, model, and weights to build directory"
+# )
 
 
 SET_PROPERTY(TARGET ray PROPERTY CXX_STANDARD 17)

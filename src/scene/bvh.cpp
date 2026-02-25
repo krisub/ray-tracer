@@ -332,7 +332,7 @@ uint32_t Bvh::buildRecursive(const std::vector<uint32_t> &refs, int depth) {
   double spatialCost = std::numeric_limits<double>::infinity();
   double spatialOverlap = objectOverlap;
 
-  // Evaluate spatial split planes and only keep those with strong overlap reduction.
+  // keep track of best spatial split
   for (int axis = 0; axis < 3; ++axis) {
     const double minA = nodeBounds.getMin()[axis];
     const double maxA = nodeBounds.getMax()[axis];
@@ -711,7 +711,7 @@ bool Bvh::intersect(ray &r, isect &outIsect) const {
     const BvhNode &node = nodes[nodeIndex];
 
     if (node.primCount > 0) {
-      // Leaf: test primitives.
+      // leaf: test primitives
       const uint32_t end = node.firstPrim + node.primCount;
       for (uint32_t i = node.firstPrim; i < end; ++i) {
         Geometry *obj = prims[primIndices[i]].obj;
@@ -725,7 +725,7 @@ bool Bvh::intersect(ray &r, isect &outIsect) const {
       continue;
     }
 
-    // Interior: test children bounds once, cull against bestT, push in order.
+    // interior: test children bounds once, cull against bestT, push in order
     double lmin = 0.0, lmax = 0.0;
     double rmin = 0.0, rmax = 0.0;
     bool hitLeft = nodes[node.left].bounds.intersect(origin, invDir, lmin, lmax);

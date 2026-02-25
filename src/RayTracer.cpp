@@ -35,7 +35,7 @@
 
 #include <unistd.h> 
 #include <limits.h>
-#include <onnxruntime_cxx_api.h> // aaNeuralImage
+// #include <onnxruntime_cxx_api.h> // aaNeuralImage
 
 using namespace std;
 extern TraceUI *traceUI;
@@ -1204,7 +1204,6 @@ glm::dvec3 RayTracer::traceVolumetric(ray &r, double tNear, double tFar,
                                       const std::vector<VolumeInterval> &volumes,
                                       const glm::dvec3 &thresh, int depth,
                                       const glm::dvec3 &behindColor) {
-  // Use the smallest step size among all volumes
   double stepSize = 0.02;
   for (const auto &vol : volumes) {
     stepSize = std::min(stepSize, vol.mat->volumeStepSize());
@@ -1224,13 +1223,11 @@ glm::dvec3 RayTracer::traceVolumetric(ray &r, double tNear, double tFar,
     double tSample = tNear + (step + 0.5) * dt;
     glm::dvec3 samplePos = r.at(tSample);
 
-    // Sum contributions from ALL volumes at this sample point
     glm::dvec3 sigma_a(0.0), sigma_s(0.0), volEmission(0.0);
     double avgG = 0.0;
     double totalWeight = 0.0;
 
     for (const auto &vol : volumes) {
-      // Skip volumes we're not inside at this t
       if (tSample < vol.tNear || tSample > vol.tFar) continue;
 
       double d = sampleVolumeDensity(samplePos, vol.obj, *vol.mat);
@@ -1390,14 +1387,13 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
       glm::dvec3 KrEff = m.kr(i);
       glm::dvec3 KtEff = m.kt(i);
       if (traceUI && traceUI->getFresnel()) {
-        // Fresnel-rim coupling for recursive reflection/refraction when --fresnel is enabled.
+        // fresnel rim coupling for recursive reflection/refraction when --fresnel is enabled.
         glm::dvec3 F0 = computeF0(m, i);
         glm::dvec3 F = recursiveFresnelFactor(r, i, m);
         glm::dvec3 rimW = recursiveRimWeight(F, F0);
         glm::dvec3 oneMinusF =
             glm::clamp(glm::dvec3(1.0) - F, glm::dvec3(0.0), glm::dvec3(1.0));
-        // Keep baseline Kr reflectance and add Fresnel rim boost on top.
-        // This avoids the "fresnel is less reflective than baseline" issue.
+        // keep baseline Kr reflectance and add Fresnel rim on top
         glm::dvec3 baseKr = glm::clamp(KrEff, glm::dvec3(0.0), glm::dvec3(1.0));
         constexpr double kRimBoost = 1.0;
         KrEff = glm::clamp(
@@ -2612,100 +2608,100 @@ int RayTracer::aaFastApproxImage() {
   return 0;
 }
 
-int RayTracer::aaNeuralImage() {
-  if (skipNextPostAAPass) {
-    skipNextPostAAPass = false;
-    return 0;
-  }
-  std::cout << "running neural aa!" << std::endl;
-  char path[PATH_MAX];
-  ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
-  std::string exeDir = (count > 0) ? std::string(path, count) : "";
-  size_t last_slash = exeDir.find_last_of('/');
-  if (last_slash != std::string::npos) {
-      exeDir = exeDir.substr(0, last_slash);
-  }
+// int RayTracer::aaNeuralImage() {
+//   if (skipNextPostAAPass) {
+//     skipNextPostAAPass = false;
+//     return 0;
+//   }
+//   std::cout << "running neural aa!" << std::endl;
+//   char path[PATH_MAX];
+//   ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
+//   std::string exeDir = (count > 0) ? std::string(path, count) : "";
+//   size_t last_slash = exeDir.find_last_of('/');
+//   if (last_slash != std::string::npos) {
+//       exeDir = exeDir.substr(0, last_slash);
+//   }
 
-  std::string modelFile = exeDir + "/neural_aa_best.onnx";
+//   std::string modelFile = exeDir + "/neural_aa_best.onnx";
 
-  Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "aaNeuralImage");
-  Ort::SessionOptions sessionOptions;
-  sessionOptions.SetIntraOpNumThreads(threads);
-  sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
+//   Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "aaNeuralImage");
+//   Ort::SessionOptions sessionOptions;
+//   sessionOptions.SetIntraOpNumThreads(threads);
+//   sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
 
-  Ort::Session session(env, modelFile.c_str(), sessionOptions);
+//   Ort::Session session(env, modelFile.c_str(), sessionOptions);
 
-  // buffer to tensor
-  // RayTracer Buffer: [H, W, 3] (RGBRGB...) values 0-255
-  // model input:      [1, 3, H, W] (RRR...GGG...BBB...) values 0.0-1.0
+//   // buffer to tensor
+//   // RayTracer Buffer: [H, W, 3] (RGBRGB...) values 0-255
+//   // model input:      [1, 3, H, W] (RRR...GGG...BBB...) values 0.0-1.0
 
-  std::vector<int64_t> inputShape = {1, 3, buffer_height, buffer_width};
-  size_t inputTensorSize = 3 * buffer_height * buffer_width;
-  std::vector<float> inputTensorValues(inputTensorSize);
+//   std::vector<int64_t> inputShape = {1, 3, buffer_height, buffer_width};
+//   size_t inputTensorSize = 3 * buffer_height * buffer_width;
+//   std::vector<float> inputTensorValues(inputTensorSize);
 
-  #pragma omp parallel for collapse(2)
-  for (int y = 0; y < buffer_height; ++y) {
-      for (int x = 0; x < buffer_width; ++x) {
-          int pixelIdx = (x + y * buffer_width) * 3;
+//   #pragma omp parallel for collapse(2)
+//   for (int y = 0; y < buffer_height; ++y) {
+//       for (int x = 0; x < buffer_width; ++x) {
+//           int pixelIdx = (x + y * buffer_width) * 3;
           
-          float r = buffer[pixelIdx + 0] / 255.0f;
-          float g = buffer[pixelIdx + 1] / 255.0f;
-          float b = buffer[pixelIdx + 2] / 255.0f;
+//           float r = buffer[pixelIdx + 0] / 255.0f;
+//           float g = buffer[pixelIdx + 1] / 255.0f;
+//           float b = buffer[pixelIdx + 2] / 255.0f;
 
-          // [batch, channel, height, width]
-          size_t planeSize = buffer_width * buffer_height;
-          size_t offset = y * buffer_width + x;
+//           // [batch, channel, height, width]
+//           size_t planeSize = buffer_width * buffer_height;
+//           size_t offset = y * buffer_width + x;
 
-          inputTensorValues[offset] = r;                 
-          inputTensorValues[planeSize + offset] = g;     
-          inputTensorValues[2 * planeSize + offset] = b;
-      }
-  }
+//           inputTensorValues[offset] = r;                 
+//           inputTensorValues[planeSize + offset] = g;     
+//           inputTensorValues[2 * planeSize + offset] = b;
+//       }
+//   }
 
-  auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-  Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-      memoryInfo, inputTensorValues.data(), inputTensorSize, inputShape.data(), inputShape.size());
+//   auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+//   Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+//       memoryInfo, inputTensorValues.data(), inputTensorSize, inputShape.data(), inputShape.size());
 
-  // const char* inputNames[] = {"input"};
-  // const char* outputNames[] = {"output"};
+//   // const char* inputNames[] = {"input"};
+//   // const char* outputNames[] = {"output"};
 
-  Ort::AllocatorWithDefaultOptions allocator;
+//   Ort::AllocatorWithDefaultOptions allocator;
 
-  auto inputNamePtr = session.GetInputNameAllocated(0, allocator);
-  auto outputNamePtr = session.GetOutputNameAllocated(0, allocator);
+//   auto inputNamePtr = session.GetInputNameAllocated(0, allocator);
+//   auto outputNamePtr = session.GetOutputNameAllocated(0, allocator);
 
-  const char* inputNames[] = { inputNamePtr.get() };
-  const char* outputNames[] = { outputNamePtr.get() };
+//   const char* inputNames[] = { inputNamePtr.get() };
+//   const char* outputNames[] = { outputNamePtr.get() };
 
-  auto outputTensors = session.Run(
-      Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1, outputNames, 1);
+//   auto outputTensors = session.Run(
+//       Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1, outputNames, 1);
 
-  // tensor to buffer
-  float* floatArr = outputTensors.front().GetTensorMutableData<float>();
+//   // tensor to buffer
+//   float* floatArr = outputTensors.front().GetTensorMutableData<float>();
 
-  #pragma omp parallel for collapse(2)
-  for (int y = 0; y < buffer_height; ++y) {
-      for (int x = 0; x < buffer_width; ++x) {
-          size_t planeSize = buffer_width * buffer_height;
-          size_t offset = y * buffer_width + x;
+//   #pragma omp parallel for collapse(2)
+//   for (int y = 0; y < buffer_height; ++y) {
+//       for (int x = 0; x < buffer_width; ++x) {
+//           size_t planeSize = buffer_width * buffer_height;
+//           size_t offset = y * buffer_width + x;
 
-          float r = floatArr[offset];
-          float g = floatArr[planeSize + offset];
-          float b = floatArr[2 * planeSize + offset];
+//           float r = floatArr[offset];
+//           float g = floatArr[planeSize + offset];
+//           float b = floatArr[2 * planeSize + offset];
 
-          r = std::max(0.0f, std::min(1.0f, r));
-          g = std::max(0.0f, std::min(1.0f, g));
-          b = std::max(0.0f, std::min(1.0f, b));
+//           r = std::max(0.0f, std::min(1.0f, r));
+//           g = std::max(0.0f, std::min(1.0f, g));
+//           b = std::max(0.0f, std::min(1.0f, b));
 
-          unsigned char* pixel = buffer.data() + (x + y * buffer_width) * 3;
-          pixel[0] = static_cast<unsigned char>(r * 255.0f);
-          pixel[1] = static_cast<unsigned char>(g * 255.0f);
-          pixel[2] = static_cast<unsigned char>(b * 255.0f);
-      }
-  }
+//           unsigned char* pixel = buffer.data() + (x + y * buffer_width) * 3;
+//           pixel[0] = static_cast<unsigned char>(r * 255.0f);
+//           pixel[1] = static_cast<unsigned char>(g * 255.0f);
+//           pixel[2] = static_cast<unsigned char>(b * 255.0f);
+//       }
+//   }
 
-  return 0;
-}
+//   return 0;
+// }
 
 
 bool RayTracer::checkRender() {

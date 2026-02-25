@@ -230,7 +230,8 @@ int CommandLineUI::run() {
       } else if (m_fxAntialiasing) {
         raytracer->aaFastApproxImage();
       } else if (m_neural) {
-        raytracer->aaNeuralImage();
+        cout << "neural aa commented out." << endl;
+        // raytracer->aaNeuralImage();
       } else {
         raytracer->aaImage();
       }
@@ -338,8 +339,8 @@ int CommandLineUI::runAnimation() {
         raytracer->aaAdaptiveImage();
       else if (m_fxAntialiasing)
         raytracer->aaFastApproxImage();
-      else if (m_neural)
-        raytracer->aaNeuralImage();
+      // else if (m_neural)
+        // raytracer->aaNeuralImage();
       else
         raytracer->aaImage();
       raytracer->waitRender();
