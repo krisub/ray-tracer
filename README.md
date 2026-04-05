@@ -215,9 +215,10 @@ $$L(x) = \begin{cases} \text{sinc}(x) \cdot \text{sinc}(x/2) & \text{if } |x| < 
 Where `sinc` is a normalized sinc function: $\text{sinc}(t) = \frac{\sin(\pi t)}{\pi t}$
 Instead of sampling the four nearest neighbors as in bilinear interp, I iterate over a 4x4 pixel window surrounding the sample coordinates and calculate a weight based on the horizontal and vertical distance. The weighted pixel colors are summed and normalized. (A weight sum of zero falls back to the nearest pixel). To test my sinc filter, I created a tiny 4x4 checkerboard (`tiny.bmp`) and ran it with bilinear and sinc filtering (sinc filtering can be enabled via `--sinc`).
 Bilinear:
-![tiny_bilin.png](./ecm2/tiny_bilin.png)
+![tiny_bilin.png](./ecm2/extra_credit_output/tiny_bilin.png)
+
 Sinc:
-![tiny_sinc.png](./ecm2/tiny_sinc.png)
+![tiny_sinc.png](./ecm2/extra_credit_output/tiny_sinc.png)
 When fed a square wave of alternating pixels, the sinc filter mathematically converts it into a sine wave, which looks like a grid of smooth round blobs. Bilinear, by contrast, draws straight lines between dots, making the checkerboard look boxier.
 
 Commands (from root dir):
